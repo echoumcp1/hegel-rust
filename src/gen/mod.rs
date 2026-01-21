@@ -25,8 +25,20 @@ pub(crate) use numeric::{FloatGenerator, IntegerGenerator};
 pub(crate) use primitives::BoolGenerator;
 pub(crate) use strings::TextGenerator;
 
-use crate::HegelMode;
 use serde_json::{json, Value};
+
+/// The execution mode for the Hegel SDK.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum HegelMode {
+    #[default]
+    Standalone,
+    Embedded,
+}
+
+pub(crate) mod exit_codes {
+    pub const TEST_FAILURE: i32 = 1;
+    pub const SOCKET_ERROR: i32 = 134;
+}
 use std::cell::{Cell, RefCell};
 use std::io::{BufRead, BufReader, Write};
 use std::marker::PhantomData;
@@ -46,12 +58,12 @@ thread_local! {
 }
 
 /// Get the current execution mode.
-pub fn current_mode() -> HegelMode {
+pub(crate) fn current_mode() -> HegelMode {
     MODE.with(|m| m.get())
 }
 
 /// Check if this is the last run.
-pub fn is_last_run() -> bool {
+pub(crate) fn is_last_run() -> bool {
     IS_LAST_RUN.with(|r| r.get())
 }
 
@@ -131,13 +143,13 @@ pub(crate) fn open_connection() {
                     "Failed to connect to Hegel socket at {}: {}",
                     socket_path, e
                 );
-                std::process::exit(crate::exit_codes::SOCKET_ERROR);
+                std::process::exit(exit_codes::SOCKET_ERROR);
             }
         };
 
         let writer = stream.try_clone().unwrap_or_else(|e| {
             eprintln!("Failed to clone socket: {}", e);
-            std::process::exit(crate::exit_codes::SOCKET_ERROR);
+            std::process::exit(exit_codes::SOCKET_ERROR);
         });
         let reader = BufReader::new(stream);
 
@@ -239,13 +251,13 @@ pub(crate) fn send_request(command: &str, payload: &Value) -> Value {
 
         if let Err(e) = state.writer.write_all(message.as_bytes()) {
             eprintln!("Failed to write to Hegel socket: {}", e);
-            std::process::exit(crate::exit_codes::SOCKET_ERROR);
+            std::process::exit(exit_codes::SOCKET_ERROR);
         }
 
         let mut response = String::new();
         if let Err(e) = state.reader.read_line(&mut response) {
             eprintln!("Failed to read from Hegel socket: {}", e);
-            std::process::exit(crate::exit_codes::SOCKET_ERROR);
+            std::process::exit(exit_codes::SOCKET_ERROR);
         }
 
         if debug {
