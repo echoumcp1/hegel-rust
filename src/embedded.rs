@@ -29,7 +29,10 @@
 //! }
 //! ```
 
-use crate::gen::{clear_embedded_connection, is_last_run, set_embedded_connection, set_is_last_run, set_mode, HegelMode};
+use crate::gen::{
+    clear_embedded_connection, is_last_run, set_embedded_connection, set_is_last_run, set_mode,
+    HegelMode,
+};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};

@@ -41,7 +41,8 @@ fn main() {
         r"\nthread '.*' \(\d+\) panicked at [^\n]+:\n",
         r"Hegel test failed \(exit code 1\)",
         r"$",
-    )).unwrap();
+    ))
+    .unwrap();
 
     assert!(
         expected.is_match(&output.stderr),
