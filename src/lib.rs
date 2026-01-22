@@ -8,8 +8,8 @@ pub use gen::Generate;
 pub use paste;
 
 // re-export public api
-pub use hegel_derive::Generate;
 pub use embedded::{hegel, Hegel, Verbosity};
+pub use hegel_derive::Generate;
 
 use gen::HegelMode;
 
