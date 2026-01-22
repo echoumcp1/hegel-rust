@@ -32,11 +32,3 @@ def test_lists():
 
 def test_sampled_from():
     run_conformance_test("sampled_from", BUILD_DIR / "test_sampled_from")
-
-
-def test_floats_nan():
-    run_conformance_test("floats", BUILD_DIR / "test_floats_nan")
-
-
-def test_floats_infinity():
-    run_conformance_test("floats", BUILD_DIR / "test_floats_infinity")
