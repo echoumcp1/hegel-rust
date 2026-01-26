@@ -7,18 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  format:
-    name: format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - run: cargo fmt --check
-
-  clippy:
-    name: clippy
+  lint:
+    name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +17,8 @@ jobs:
           ssh-key: ${{ secrets.HEGEL_DEPLOY_KEY }}
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: rustfmt, clippy
+      - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
 
   test:
