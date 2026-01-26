@@ -9,6 +9,7 @@ mod numeric;
 mod primitives;
 mod strings;
 mod tuples;
+mod value;
 
 // public api
 pub use binary::binary;
@@ -322,7 +323,9 @@ pub fn generate_from_schema<T: serde::de::DeserializeOwned>(schema: &Value) -> T
         buffer_generated_value(&format!("Generated: {}", result));
     }
 
-    serde_json::from_value(result.clone()).unwrap_or_else(|e| {
+    // Convert to HegelValue to handle NaN/Infinity sentinel strings
+    let hegel_value = value::HegelValue::from(result.clone());
+    value::from_hegel_value(hegel_value).unwrap_or_else(|e| {
         panic!(
             "hegel: failed to deserialize server response: {}\nValue: {}",
             e, result
