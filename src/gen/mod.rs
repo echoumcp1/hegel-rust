@@ -17,6 +17,7 @@ mod value;
 pub use binary::binary;
 pub use collections::{hashmaps, hashsets, vecs};
 pub use combinators::{one_of, optional, sampled_from, sampled_from_slice, BoxedGenerator};
+pub use default::DefaultGenerator;
 pub use fixed_dict::fixed_dicts;
 pub use formats::{dates, datetimes, domains, emails, ip_addresses, times, urls};
 pub use numeric::{floats, integers};

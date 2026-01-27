@@ -48,10 +48,8 @@
 //! # hegel::hegel(|| {
 //! let _: () = gen::unit().generate();
 //! let b: bool = gen::booleans().generate();
-//! let n: i32 = gen::just(42).generate();           // constant with schema
-//! let s: String = gen::just_any(my_value).generate(); // constant without schema
+//! let n: i32 = gen::just(42).generate();  // constant with schema
 //! # });
-//! # let my_value = 1;
 //! ```
 //!
 //! ## Numbers
