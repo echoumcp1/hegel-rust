@@ -75,7 +75,7 @@ fn base64_decode(input: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{gen, hegel, Hegel};
+    use crate::{gen, Hegel};
 
     #[test]
     fn test_base64_roundtrip() {

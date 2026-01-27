@@ -9,6 +9,7 @@ pub struct TempRustProject {
 
 pub struct RunOutput {
     pub status: ExitStatus,
+    #[allow(dead_code)]
     pub stdout: String,
     pub stderr: String,
 }
