@@ -7,6 +7,8 @@ mod formats;
 mod macros;
 mod numeric;
 mod primitives;
+#[cfg(feature = "rand")]
+mod random;
 mod strings;
 mod tuples;
 mod value;
@@ -19,6 +21,8 @@ pub use fixed_dict::fixed_dicts;
 pub use formats::{dates, datetimes, domains, emails, ip_addresses, times, urls};
 pub use numeric::{floats, integers};
 pub use primitives::{booleans, just, just_any, unit};
+#[cfg(feature = "rand")]
+pub use random::{randoms, HegelRandom, RandomsGenerator};
 pub use strings::{from_regex, text};
 pub use tuples::{tuples, tuples3};
 

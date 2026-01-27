@@ -19,7 +19,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - run: cargo fmt --check
-      - run: cargo clippy -- -D warnings
+      - run: cargo clippy --all-features -- -D warnings
 
   test:
     name: tests (${{ matrix.rust }})
@@ -37,6 +37,23 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
       - run: cargo test
+
+  test-all-features:
+    name: tests (all features, ${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # keep this in sync with the rust-version in cargo.toml
+        rust: ["1.68", stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/base
+        with:
+          ssh-key: ${{ secrets.HEGEL_DEPLOY_KEY }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - run: cargo test --all-features
 
   conformance:
     name: conformance tests
