@@ -21,7 +21,22 @@ impl From<serde_json::Value> for HegelValue {
         match v {
             serde_json::Value::Null => HegelValue::Null,
             serde_json::Value::Bool(b) => HegelValue::Bool(b),
-            serde_json::Value::Number(n) => HegelValue::Number(n.as_f64().unwrap_or(0.0)),
+            serde_json::Value::Number(n) => {
+                // Check for integer values that would lose precision as f64
+                if let Some(v) = n.as_u64() {
+                    if v > (1u64 << 53) {
+                        return HegelValue::BigInt(v.to_string());
+                    }
+                    return HegelValue::Number(v as f64);
+                }
+                if let Some(v) = n.as_i64() {
+                    if !(-(1i64 << 53)..=(1i64 << 53)).contains(&v) {
+                        return HegelValue::BigInt(v.to_string());
+                    }
+                    return HegelValue::Number(v as f64);
+                }
+                HegelValue::Number(n.as_f64().unwrap_or(0.0))
+            }
             serde_json::Value::String(s) => HegelValue::String(s),
             serde_json::Value::Array(arr) => {
                 HegelValue::Array(arr.into_iter().map(HegelValue::from).collect())

@@ -1,9 +1,5 @@
-use crate::gen::{
-    clear_connection, set_connection, set_is_last_run, take_generated_values,
-};
-use crate::protocol::{
-    Channel, Connection, VERSION_NEGOTIATION_MESSAGE, VERSION_NEGOTIATION_OK,
-};
+use crate::gen::{clear_connection, set_connection, set_is_last_run, take_generated_values};
+use crate::protocol::{Channel, Connection, VERSION_NEGOTIATION_MESSAGE, VERSION_NEGOTIATION_OK};
 use serde_json::{json, Value};
 use std::cell::RefCell;
 use std::os::unix::net::UnixStream;
@@ -229,14 +225,19 @@ where
 
         // Initiate version negotiation (SDK is the client)
         let control = connection.control_channel();
-        let req_id = control.send_request(VERSION_NEGOTIATION_MESSAGE.to_vec())
+        let req_id = control
+            .send_request(VERSION_NEGOTIATION_MESSAGE.to_vec())
             .expect("Failed to send version negotiation");
-        let response = control.receive_response(req_id)
+        let response = control
+            .receive_response(req_id)
             .expect("Failed to receive version response");
 
         if response != VERSION_NEGOTIATION_OK {
             let _ = child.kill();
-            panic!("Version negotiation failed: {:?}", String::from_utf8_lossy(&response));
+            panic!(
+                "Version negotiation failed: {:?}",
+                String::from_utf8_lossy(&response)
+            );
         }
 
         if self.verbosity == Verbosity::Debug {
@@ -255,13 +256,14 @@ where
             "test_cases": test_cases,
         });
 
-        let pending_id = control.send_request(cbor_encode(&run_test_msg))
+        let pending_id = control
+            .send_request(cbor_encode(&run_test_msg))
             .expect("Failed to send run_test");
 
         // Handle test_case events until test_done
         loop {
-            let (event_id, event_payload) = control.receive_request()
-                .expect("Failed to receive event");
+            let (event_id, event_payload) =
+                control.receive_request().expect("Failed to receive event");
 
             let event: Value = cbor_decode(&event_payload);
             let event_type = event.get("event").and_then(|e| e.as_str());
@@ -272,10 +274,12 @@ where
 
             match event_type {
                 Some("test_case") => {
-                    let channel_id = event.get("channel")
+                    let channel_id = event
+                        .get("channel")
                         .and_then(|c| c.as_u64())
                         .expect("Missing channel id") as u32;
-                    let is_final = event.get("is_final")
+                    let is_final = event
+                        .get("is_final")
                         .and_then(|f| f.as_bool())
                         .unwrap_or(false);
 
@@ -301,25 +305,29 @@ where
                     }
 
                     // Ack the test_case event
-                    control.send_response(event_id, cbor_encode(&json!({"result": null})))
+                    control
+                        .send_response(event_id, cbor_encode(&json!({"result": null})))
                         .expect("Failed to ack test_case");
                 }
                 Some("test_done") => {
                     // Ack the test_done event
-                    control.send_response(event_id, cbor_encode(&json!({"result": null})))
+                    control
+                        .send_response(event_id, cbor_encode(&json!({"result": null})))
                         .expect("Failed to ack test_done");
                     break;
                 }
                 _ => {
                     // Unknown event, just ack it
-                    control.send_response(event_id, cbor_encode(&json!({"result": null})))
+                    control
+                        .send_response(event_id, cbor_encode(&json!({"result": null})))
                         .expect("Failed to ack event");
                 }
             }
         }
 
         // Get the run_test result
-        let result_payload = control.receive_response(pending_id)
+        let result_payload = control
+            .receive_response(pending_id)
             .expect("Failed to receive run_test result");
         let result: Value = cbor_decode(&result_payload);
 
@@ -327,24 +335,35 @@ where
             eprintln!("Test result: {:?}", result);
         }
 
-        let passed = result.get("passed").and_then(|p| p.as_bool()).unwrap_or(true);
+        let passed = result
+            .get("passed")
+            .and_then(|p| p.as_bool())
+            .unwrap_or(true);
+
+        // Close the connection so hegeld can exit gracefully
+        drop(control);
+        let _ = connection.close();
+        drop(connection);
 
         // Wait for hegeld to exit
         let _ = child.wait().expect("Failed to wait for hegel");
 
         if !passed || got_interesting.load(Ordering::SeqCst) {
             let failure = result.get("failure").cloned().unwrap_or(json!(null));
-            let exc_type = failure.get("exc_type")
+            let exc_type = failure
+                .get("exc_type")
                 .and_then(|e| e.as_str())
                 .unwrap_or("AssertionError");
-            let filename = failure.get("filename")
+            let filename = failure
+                .get("filename")
                 .and_then(|f| f.as_str())
                 .unwrap_or("");
-            let lineno = failure.get("lineno")
-                .and_then(|l| l.as_u64())
-                .unwrap_or(0);
+            let lineno = failure.get("lineno").and_then(|l| l.as_u64()).unwrap_or(0);
 
-            panic!("Property test failed: {} at {}:{}", exc_type, filename, lineno);
+            panic!(
+                "Property test failed: {} at {}:{}",
+                exc_type, filename, lineno
+            );
         }
     }
 }
