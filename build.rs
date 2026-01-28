@@ -48,10 +48,27 @@ fn ensure_hegel() -> PathBuf {
     let uv_path = ensure_uv(&install_path);
     eprintln!("using uv: {}", uv_path.display());
 
-    eprintln!("creating venv at {}", uv_path.display());
+    eprintln!("creating venv at {}", venv_path.display());
     let status = Command::new(&uv_path)
         .args(["venv", "--python", "3.13"])
         .arg(&venv_path)
+        // when we ask uv to install python 3.13, uv will first check if it has previously
+        // installed any other 3.13 versions (in eg ~/.local/share/uv`), and symlink to that
+        // instead if so. But if this python is shared by other installs, weird things might
+        // happen. For example, we saw:
+        //
+        // ```
+        // error: The interpreter at ~/.local/share/uv/python/cpython-3.13.11-linux-x86_64-gnu is
+        // externally managed, and indicates the following:
+        //   This Python installation is managed by uv and should not be modified.
+        // hint: Consider creating a virtual environment, e.g., with `uv venv`
+        // ```
+        //
+        // when uv did this symlinking behavior.
+        //
+        // To avoid any issues like this, we'll isolate uv to always download and install a new
+        // python specifically for this build.
+        .env("UV_PYTHON_INSTALL_DIR", &install_path.join("python"))
         .status()
         .expect("failed to create venv");
     assert!(status.success(), "failed to create venv");
