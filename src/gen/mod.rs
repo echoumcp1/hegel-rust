@@ -56,6 +56,8 @@ thread_local! {
     static IS_LAST_RUN: Cell<bool> = const { Cell::new(false) };
     /// Buffer for generated values during final replay
     static GENERATED_VALUES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Whether the test was aborted due to StopTest (server closed channel)
+    pub(crate) static TEST_ABORTED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Check if this is the last run.
@@ -95,13 +97,13 @@ pub fn note(message: &str) {
 pub(crate) struct ConnectionState {
     /// Keep the connection alive (actual I/O goes through channel)
     #[allow(dead_code)]
-    connection: Arc<Connection>,
-    channel: Channel,
-    span_depth: usize,
+    pub(crate) connection: Arc<Connection>,
+    pub(crate) channel: Channel,
+    pub(crate) span_depth: usize,
 }
 
 thread_local! {
-    static CONNECTION: RefCell<Option<ConnectionState>> = const { RefCell::new(None) };
+    pub(crate) static CONNECTION: RefCell<Option<ConnectionState>> = const { RefCell::new(None) };
 }
 
 fn is_debug() -> bool {
@@ -221,7 +223,14 @@ pub(crate) fn send_request(command: &str, payload: &Value) -> Result<Value, Stop
 }
 
 pub(crate) fn request_from_schema(schema: &Value) -> Result<Value, StopTestError> {
-    send_request("generate", &json!({"schema": schema}))
+    match send_request("generate", &json!({"schema": schema})) {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            // Mark test as aborted - server has closed the channel
+            TEST_ABORTED.with(|aborted| aborted.set(true));
+            Err(e)
+        }
+    }
 }
 
 /// Generate a value from a schema.

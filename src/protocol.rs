@@ -176,18 +176,6 @@ impl Channel {
         }
     }
 
-    /// Create a clone of this channel for embedded mode.
-    /// This creates a new Channel with the same channel_id but separate state.
-    pub fn clone_for_embedded(&self) -> Self {
-        Self {
-            channel_id: self.channel_id,
-            connection: Arc::clone(&self.connection),
-            next_message_id: AtomicU32::new(1),
-            responses: Mutex::new(HashMap::new()),
-            requests: Mutex::new(VecDeque::new()),
-        }
-    }
-
     /// Send a request and return the message ID.
     pub fn send_request(&self, payload: Vec<u8>) -> std::io::Result<u32> {
         let message_id = self.next_message_id.fetch_add(1, Ordering::SeqCst);

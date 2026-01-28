@@ -1,4 +1,7 @@
-use crate::gen::{clear_connection, set_connection, set_is_last_run, take_generated_values};
+use crate::gen::{
+    clear_connection, set_connection, set_is_last_run, take_generated_values, CONNECTION,
+    TEST_ABORTED,
+};
 use crate::protocol::{Channel, Connection, VERSION_NEGOTIATION_MESSAGE, VERSION_NEGOTIATION_OK};
 use serde_json::{json, Value};
 use std::cell::RefCell;
@@ -285,24 +288,14 @@ where
 
                     let test_channel = connection.connect_channel(channel_id);
 
-                    let (status, origin) = run_test_case(
+                    run_test_case(
                         &connection,
-                        &test_channel,
+                        test_channel,
                         &mut test_fn,
                         is_final,
                         verbosity,
                         &got_interesting,
                     );
-
-                    // Send mark_complete (unless we hit overflow/StopTest)
-                    if status != "OVERFLOW" {
-                        let mark_complete = json!({
-                            "command": "mark_complete",
-                            "status": status,
-                            "origin": origin,
-                        });
-                        let _ = test_channel.request_json(&mark_complete);
-                    }
 
                     // Ack the test_case event
                     control
@@ -371,27 +364,27 @@ where
 /// Run a single test case.
 fn run_test_case<F: FnMut()>(
     connection: &Arc<Connection>,
-    test_channel: &Channel,
+    test_channel: Channel,
     test_fn: &mut F,
     is_final: bool,
     _verbosity: Verbosity,
     got_interesting: &Arc<AtomicBool>,
-) -> (String, Option<Value>) {
+) {
     // Set thread-local state for this test case
+    // Note: we pass the channel directly (not cloned) so generators and mark_complete
+    // share the same message ID sequence.
     set_is_last_run(is_final);
-    set_connection(Arc::clone(connection), test_channel.clone_for_embedded());
+    set_connection(Arc::clone(connection), test_channel);
 
     // Run test in catch_unwind
     let result = catch_unwind(AssertUnwindSafe(test_fn));
 
-    // Clear connection before returning (test is done generating)
-    clear_connection();
-
-    match result {
+    // Determine status and origin from result
+    let (status, origin) = match &result {
         Ok(()) => ("VALID".to_string(), None),
         Err(e) => {
             // Check if this is an assume(false) panic
-            let msg = panic_message(&e);
+            let msg = panic_message(e);
             if msg == REJECT_MARKER {
                 ("INVALID".to_string(), None)
             } else {
@@ -426,7 +419,26 @@ fn run_test_case<F: FnMut()>(
                 ("INTERESTING".to_string(), Some(origin))
             }
         }
+    };
+
+    // Send mark_complete using the same channel that generators used.
+    // Skip if test was aborted (StopTest) - server already closed the channel.
+    let was_aborted = TEST_ABORTED.with(|aborted| aborted.replace(false));
+    if !was_aborted {
+        CONNECTION.with(|conn| {
+            if let Some(state) = conn.borrow_mut().as_mut() {
+                let mark_complete = json!({
+                    "command": "mark_complete",
+                    "status": status,
+                    "origin": origin,
+                });
+                let _ = state.channel.request_json(&mark_complete);
+            }
+        });
     }
+
+    // Clear connection after mark_complete is sent (or skipped)
+    clear_connection();
 }
 
 /// Extract a message from a panic payload.
