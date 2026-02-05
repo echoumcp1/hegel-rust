@@ -8,7 +8,7 @@
 .hegel
 __pycache__
 target/
-.claude/settings.local.json
+**/.claude/
 result
 .claude-reliability/
 
