@@ -173,11 +173,13 @@ fn test_optional_mapped() {
         }
     });
 
-    find_any(gen::optional(gen::integers::<i32>().map(|n| n * 2)), |v| {
-        v.is_some()
-    });
+    find_any(
+        gen::optional(gen::integers::<i32>().map(|n| n.wrapping_mul(2))),
+        |v| v.is_some(),
+    );
 
-    find_any(gen::optional(gen::integers::<i32>().map(|n| n * 2)), |v| {
-        v.is_none()
-    });
+    find_any(
+        gen::optional(gen::integers::<i32>().map(|n| n.wrapping_mul(2))),
+        |v| v.is_none(),
+    );
 }
