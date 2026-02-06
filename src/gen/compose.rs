@@ -46,6 +46,20 @@ where
 unsafe impl<T, F: Send> Send for ComposedGenerator<T, F> {}
 unsafe impl<T, F: Sync> Sync for ComposedGenerator<T, F> {}
 
+/// Compile-time FNV-1a hash of a byte slice, producing a u64 label.
+pub const fn fnv1a_hash(bytes: &[u8]) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut hash = FNV_OFFSET;
+    let mut i = 0;
+    while i < bytes.len() {
+        hash ^= bytes[i] as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+        i += 1;
+    }
+    hash
+}
+
 /// Create a generator from imperative code that calls `.generate()` on other generators.
 ///
 /// This is analogous to Hypothesis's `@composite` decorator. The body can call
@@ -65,13 +79,15 @@ unsafe impl<T, F: Sync> Sync for ComposedGenerator<T, F> {}
 ///
 /// # Shrinking
 ///
-/// The body is wrapped in a labeled span, which helps the testing engine
-/// understand the structure of generated data and improve shrinking.
+/// The body is wrapped in a labeled span derived from a hash of the source code,
+/// which helps the testing engine understand the structure of generated data
+/// and improve shrinking.
 #[macro_export]
 macro_rules! compose {
-    ({ $($body:tt)* }) => {
+    ({ $($body:tt)* }) => {{
+        const LABEL: u64 = $crate::gen::fnv1a_hash(stringify!($($body)*).as_bytes());
         $crate::gen::ComposedGenerator::new(move || {
-            $crate::gen::group($crate::gen::labels::COMPOSE, || { $($body)* })
+            $crate::gen::group(LABEL, || { $($body)* })
         })
-    };
+    }};
 }
