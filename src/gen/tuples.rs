@@ -1,5 +1,6 @@
 use super::{generate_from_schema, group, labels, Generate};
-use serde_json::{json, Value};
+use crate::cbor_helpers::{cbor_array, cbor_map};
+use ciborium::Value;
 
 pub struct Tuple2Generator<G1, G2> {
     gen1: G1,
@@ -29,10 +30,10 @@ where
         let s1 = self.gen1.schema()?;
         let s2 = self.gen2.schema()?;
 
-        Some(json!({
-            "type": "tuple",
-            "elements": [s1, s2]
-        }))
+        Some(cbor_map! {
+            "type" => "tuple",
+            "elements" => cbor_array![s1, s2]
+        })
     }
 }
 
@@ -76,10 +77,10 @@ where
         let s2 = self.gen2.schema()?;
         let s3 = self.gen3.schema()?;
 
-        Some(json!({
-            "type": "tuple",
-            "elements": [s1, s2, s3]
-        }))
+        Some(cbor_map! {
+            "type" => "tuple",
+            "elements" => cbor_array![s1, s2, s3]
+        })
     }
 }
 

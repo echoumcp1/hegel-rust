@@ -1,5 +1,6 @@
 use super::{generate_from_schema, Generate};
-use serde_json::{json, Value};
+use crate::cbor_helpers::{cbor_map, map_insert};
+use ciborium::Value;
 
 #[cfg(test)]
 const BASE64_ALPHABET: &[u8; 64] =
@@ -7,7 +8,7 @@ const BASE64_ALPHABET: &[u8; 64] =
 
 #[cfg(test)]
 fn base64_encode(input: &[u8]) -> String {
-    let mut result = String::with_capacity((input.len() + 2) / 3 * 4);
+    let mut result = String::with_capacity(input.len().div_ceil(3) * 4);
 
     for chunk in input.chunks(3) {
         // 3 bytes (3x8=24 bits) -> 4 base64 chars (4x6=24 bits)
@@ -110,13 +111,13 @@ impl Generate<Vec<u8>> for BinaryGenerator {
     }
 
     fn schema(&self) -> Option<Value> {
-        let mut schema = json!({
-            "type": "binary",
-            "min_size": self.min_size
-        });
+        let mut schema = cbor_map! {
+            "type" => "binary",
+            "min_size" => self.min_size as u64
+        };
 
         if let Some(max) = self.max_size {
-            schema["max_size"] = json!(max);
+            map_insert(&mut schema, "max_size", Value::from(max as u64));
         }
 
         Some(schema)

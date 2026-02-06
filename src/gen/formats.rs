@@ -1,5 +1,6 @@
 use super::{generate_from_schema, Generate};
-use serde_json::{json, Value};
+use crate::cbor_helpers::{cbor_array, cbor_map};
+use ciborium::Value;
 
 pub struct EmailGenerator;
 
@@ -9,7 +10,7 @@ impl Generate<String> for EmailGenerator {
     }
 
     fn schema(&self) -> Option<Value> {
-        Some(json!({"type": "email"}))
+        Some(cbor_map! {"type" => "email"})
     }
 }
 
@@ -25,7 +26,7 @@ impl Generate<String> for UrlGenerator {
     }
 
     fn schema(&self) -> Option<Value> {
-        Some(json!({"type": "url"}))
+        Some(cbor_map! {"type" => "url"})
     }
 }
 
@@ -50,10 +51,10 @@ impl Generate<String> for DomainGenerator {
     }
 
     fn schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "domain",
-            "max_length": self.max_length
-        }))
+        Some(cbor_map! {
+            "type" => "domain",
+            "max_length" => self.max_length as u64
+        })
     }
 }
 
@@ -90,14 +91,14 @@ impl Generate<String> for IpAddressGenerator {
 
     fn schema(&self) -> Option<Value> {
         match self.version {
-            Some(IpVersion::V4) => Some(json!({"type": "ipv4"})),
-            Some(IpVersion::V6) => Some(json!({"type": "ipv6"})),
-            None => Some(json!({
-                "one_of": [
-                    {"type": "ipv4"},
-                    {"type": "ipv6"}
+            Some(IpVersion::V4) => Some(cbor_map! {"type" => "ipv4"}),
+            Some(IpVersion::V6) => Some(cbor_map! {"type" => "ipv6"}),
+            None => Some(cbor_map! {
+                "one_of" => cbor_array![
+                    cbor_map!{"type" => "ipv4"},
+                    cbor_map!{"type" => "ipv6"}
                 ]
-            })),
+            }),
         }
     }
 }
@@ -114,7 +115,7 @@ impl Generate<String> for DateGenerator {
     }
 
     fn schema(&self) -> Option<Value> {
-        Some(json!({"type": "date"}))
+        Some(cbor_map! {"type" => "date"})
     }
 }
 
@@ -130,7 +131,7 @@ impl Generate<String> for TimeGenerator {
     }
 
     fn schema(&self) -> Option<Value> {
-        Some(json!({"type": "time"}))
+        Some(cbor_map! {"type" => "time"})
     }
 }
 
@@ -146,7 +147,7 @@ impl Generate<String> for DateTimeGenerator {
     }
 
     fn schema(&self) -> Option<Value> {
-        Some(json!({"type": "datetime"}))
+        Some(cbor_map! {"type" => "datetime"})
     }
 }
 

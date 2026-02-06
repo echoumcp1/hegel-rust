@@ -1,5 +1,6 @@
 use super::{generate_from_schema, Generate};
-use serde_json::{json, Value};
+use crate::cbor_helpers::{cbor_map, cbor_serialize};
+use ciborium::Value;
 
 pub fn unit() -> JustGenerator<()> {
     just(())
@@ -15,7 +16,7 @@ impl<T: Clone + Send + Sync + serde::Serialize> Generate<T> for JustGenerator<T>
     }
 
     fn schema(&self) -> Option<Value> {
-        Some(json!({"const": self.value}))
+        Some(cbor_map! {"const" => cbor_serialize(&self.value)})
     }
 }
 
@@ -44,11 +45,11 @@ pub struct BoolGenerator;
 
 impl Generate<bool> for BoolGenerator {
     fn generate(&self) -> bool {
-        generate_from_schema(&json!({"type": "boolean"}))
+        generate_from_schema(&cbor_map! {"type" => "boolean"})
     }
 
     fn schema(&self) -> Option<Value> {
-        Some(json!({"type": "boolean"}))
+        Some(cbor_map! {"type" => "boolean"})
     }
 }
 

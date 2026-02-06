@@ -9,43 +9,57 @@ pub enum HegelValue {
     Null,
     Bool(bool),
     Number(f64),
-    /// Large integer that doesn't fit in f64 precisely (abs >= 2^63)
+    /// Large integer that doesn't fit in f64 precisely (abs >= 2^53)
     BigInt(String),
     String(String),
     Array(Vec<HegelValue>),
     Object(HashMap<String, HegelValue>),
 }
 
-impl From<serde_json::Value> for HegelValue {
-    fn from(v: serde_json::Value) -> Self {
+impl From<ciborium::Value> for HegelValue {
+    fn from(v: ciborium::Value) -> Self {
         match v {
-            serde_json::Value::Null => HegelValue::Null,
-            serde_json::Value::Bool(b) => HegelValue::Bool(b),
-            serde_json::Value::Number(n) => HegelValue::Number(n.as_f64().unwrap_or(0.0)),
-            serde_json::Value::String(s) => HegelValue::String(s),
-            serde_json::Value::Array(arr) => {
-                HegelValue::Array(arr.into_iter().map(HegelValue::from).collect())
+            ciborium::Value::Null => HegelValue::Null,
+            ciborium::Value::Bool(b) => HegelValue::Bool(b),
+            ciborium::Value::Float(f) => {
+                // NaN and Infinity are preserved natively by ciborium::Value
+                HegelValue::Number(f)
             }
-            serde_json::Value::Object(map) => {
-                // Check for special object wrappers
-                if map.len() == 1 {
-                    if let Some(serde_json::Value::String(s)) = map.get("$float") {
-                        return match s.as_str() {
-                            "inf" => HegelValue::Number(f64::INFINITY),
-                            "-inf" => HegelValue::Number(f64::NEG_INFINITY),
-                            "nan" => HegelValue::Number(f64::NAN),
-                            _ => HegelValue::Number(f64::NAN), // fallback
-                        };
-                    } else if let Some(serde_json::Value::String(s)) = map.get("$integer") {
-                        return HegelValue::BigInt(s.clone());
-                    }
+            ciborium::Value::Integer(i) => {
+                let n: i128 = i.into();
+                // Check if the integer can be represented precisely as f64
+                let abs = n.unsigned_abs();
+                if abs > (1u128 << 53) {
+                    HegelValue::BigInt(n.to_string())
+                } else {
+                    HegelValue::Number(n as f64)
                 }
-                HegelValue::Object(
-                    map.into_iter()
-                        .map(|(k, v)| (k, HegelValue::from(v)))
+            }
+            ciborium::Value::Text(s) => HegelValue::String(s),
+            ciborium::Value::Bytes(b) => {
+                // Encode bytes as array of numbers
+                HegelValue::Array(
+                    b.into_iter()
+                        .map(|byte| HegelValue::Number(byte as f64))
                         .collect(),
                 )
             }
+            ciborium::Value::Array(arr) => {
+                HegelValue::Array(arr.into_iter().map(HegelValue::from).collect())
+            }
+            ciborium::Value::Map(map) => HegelValue::Object(
+                map.into_iter()
+                    .map(|(k, v)| {
+                        let key = match k {
+                            ciborium::Value::Text(s) => s,
+                            other => format!("{:?}", other),
+                        };
+                        (key, HegelValue::from(v))
+                    })
+                    .collect(),
+            ),
+            ciborium::Value::Tag(_, inner) => HegelValue::from(*inner),
+            _ => HegelValue::Null,
         }
     }
 }
@@ -242,33 +256,55 @@ mod tests {
     }
 
     #[test]
-    fn test_from_serde_json_object_wrappers() {
-        let json =
-            serde_json::json!([1.0, {"$float": "nan"}, {"$float": "inf"}, {"$float": "-inf"}]);
-        let hegel = HegelValue::from(json);
-        let result: Vec<f64> = from_hegel_value(hegel).unwrap();
-        assert_eq!(result[0], 1.0);
-        assert!(result[1].is_nan());
-        assert!(result[2].is_infinite() && result[2].is_sign_positive());
-        assert!(result[3].is_infinite() && result[3].is_sign_negative());
+    fn test_from_ciborium_nan() {
+        let cbor = ciborium::Value::Float(f64::NAN);
+        let hegel = HegelValue::from(cbor);
+        if let HegelValue::Number(n) = hegel {
+            assert!(n.is_nan());
+        } else {
+            panic!("expected Number");
+        }
     }
 
     #[test]
-    fn test_from_serde_json_big_integer() {
-        // Value larger than 2^63
-        let json = serde_json::json!({"$integer": "9223372036854776833"});
-        let hegel = HegelValue::from(json);
+    fn test_from_ciborium_infinity() {
+        let cbor = ciborium::Value::Float(f64::INFINITY);
+        let hegel = HegelValue::from(cbor);
+        let result: f64 = from_hegel_value(hegel).unwrap();
+        assert!(result.is_infinite() && result.is_sign_positive());
+    }
+
+    #[test]
+    fn test_from_ciborium_neg_infinity() {
+        let cbor = ciborium::Value::Float(f64::NEG_INFINITY);
+        let hegel = HegelValue::from(cbor);
+        let result: f64 = from_hegel_value(hegel).unwrap();
+        assert!(result.is_infinite() && result.is_sign_negative());
+    }
+
+    #[test]
+    fn test_from_ciborium_big_integer() {
+        // Value larger than 2^53
+        let cbor = ciborium::Value::Integer(9223372036854776833u64.into());
+        let hegel = HegelValue::from(cbor);
         let result: u64 = from_hegel_value(hegel).unwrap();
         assert_eq!(result, 9223372036854776833u64);
     }
 
     #[test]
-    fn test_from_serde_json_big_negative_integer() {
-        // Large negative value
-        let json = serde_json::json!({"$integer": "-9223372036854776833"});
-        let hegel = HegelValue::from(json);
-        let result: i128 = from_hegel_value(hegel).unwrap();
-        assert_eq!(result, -9223372036854776833i128);
+    fn test_from_ciborium_array_with_nan() {
+        let cbor = ciborium::Value::Array(vec![
+            ciborium::Value::Float(1.0),
+            ciborium::Value::Float(f64::NAN),
+            ciborium::Value::Float(f64::INFINITY),
+            ciborium::Value::Float(f64::NEG_INFINITY),
+        ]);
+        let hegel = HegelValue::from(cbor);
+        let result: Vec<f64> = from_hegel_value(hegel).unwrap();
+        assert_eq!(result[0], 1.0);
+        assert!(result[1].is_nan());
+        assert!(result[2].is_infinite() && result[2].is_sign_positive());
+        assert!(result[3].is_infinite() && result[3].is_sign_negative());
     }
 
     #[test]

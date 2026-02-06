@@ -1,7 +1,6 @@
-use super::{
-    discardable_group, generate_from_schema, group, integers, labels, request_from_schema, Generate,
-};
-use serde_json::{json, Value};
+use super::{discardable_group, generate_from_schema, group, integers, labels, Generate};
+use crate::cbor_helpers::{cbor_array, cbor_map, cbor_serialize};
+use ciborium::Value;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -17,7 +16,7 @@ where
     F: Fn(T) -> U + Send + Sync,
 {
     fn generate(&self) -> U {
-        (self.f)(self.source.generate())
+        group(labels::MAPPED, || (self.f)(self.source.generate()))
     }
 
     fn schema(&self) -> Option<Value> {
@@ -139,6 +138,7 @@ where
 ///
 /// The lifetime `'a` represents the minimum lifetime of any borrowed data
 /// in the generator. Use `'static` for generators that own all their data.
+/// For generators that borrow data, the lifetime will match the borrow.
 pub struct BoxedGenerator<'a, T> {
     pub(crate) inner: Arc<dyn Generate<T> + Send + Sync + 'a>,
 }
@@ -180,14 +180,15 @@ impl<T: Clone + Send + Sync + serde::Serialize> Generate<T> for SampledFromGener
         // Check if elements are primitive enough for sampled_from schema
         if let Some(schema) = self.schema() {
             let value: Value = generate_from_schema(&schema);
-            // Find matching element
+            // Find matching element by comparing serialized forms
             for elem in &self.elements {
-                if json!(elem) == value {
+                let elem_cbor = cbor_serialize(elem);
+                if elem_cbor == value {
                     return elem.clone();
                 }
             }
             panic!(
-                "hegel: sampled_from received value not in elements list: {}",
+                "hegel: sampled_from received value not in elements list: {:?}",
                 value
             );
         } else {
@@ -201,19 +202,19 @@ impl<T: Clone + Send + Sync + serde::Serialize> Generate<T> for SampledFromGener
     }
 
     fn schema(&self) -> Option<Value> {
-        // Only use sampled_from schema for JSON-primitive types
-        let json_values: Vec<Value> = self.elements.iter().map(|e| json!(e)).collect();
+        // Only use sampled_from schema for CBOR-primitive types
+        let cbor_values: Vec<Value> = self.elements.iter().map(|e| cbor_serialize(e)).collect();
 
-        // Check if all values are primitives (not objects/arrays)
-        let all_primitive = json_values.iter().all(|v| {
+        // Check if all values are primitives (not maps/arrays)
+        let all_primitive = cbor_values.iter().all(|v| {
             matches!(
                 v,
-                Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
+                Value::Null | Value::Bool(_) | Value::Integer(_) | Value::Float(_) | Value::Text(_)
             )
         });
 
         if all_primitive {
-            Some(json!({"sampled_from": json_values}))
+            Some(cbor_map! {"sampled_from" => Value::Array(cbor_values)})
         } else {
             None
         }
@@ -251,9 +252,8 @@ impl<'a, T: Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned
     }
 
     fn schema(&self) -> Option<Value> {
-        Some(json!({
-            "sampled_from": self.elements
-        }))
+        let cbor_values: Vec<Value> = self.elements.iter().map(|e| cbor_serialize(e)).collect();
+        Some(cbor_map! {"sampled_from" => Value::Array(cbor_values)})
     }
 }
 
@@ -308,7 +308,7 @@ impl<'a, T: serde::de::DeserializeOwned> Generate<T> for OneOfGenerator<'a, T> {
     fn schema(&self) -> Option<Value> {
         let schemas: Option<Vec<Value>> = self.generators.iter().map(|g| g.schema()).collect();
 
-        schemas.map(|s| json!({"one_of": s}))
+        schemas.map(|s| cbor_map! {"one_of" => Value::Array(s)})
     }
 }
 
@@ -355,19 +355,17 @@ where
 {
     fn generate(&self) -> Option<T> {
         if let Some(inner_schema) = self.inner.schema() {
-            let schema = json!({
-                "one_of": [
-                    {"type": "null"},
+            let schema = cbor_map! {
+                "one_of" => cbor_array![
+                    cbor_map!{"type" => "null"},
                     inner_schema
                 ]
-            });
+            };
             generate_from_schema(&schema)
         } else {
             // Compositional fallback
             group(labels::OPTIONAL, || {
-                let is_some: bool =
-                    serde_json::from_value(request_from_schema(&json!({"type": "boolean"})))
-                        .unwrap_or(false);
+                let is_some: bool = generate_from_schema(&cbor_map! {"type" => "boolean"});
                 if is_some {
                     Some(self.inner.generate())
                 } else {
@@ -379,12 +377,12 @@ where
 
     fn schema(&self) -> Option<Value> {
         let inner_schema = self.inner.schema()?;
-        Some(json!({
-            "one_of": [
-                {"type": "null"},
+        Some(cbor_map! {
+            "one_of" => cbor_array![
+                cbor_map!{"type" => "null"},
                 inner_schema
             ]
-        }))
+        })
     }
 }
 

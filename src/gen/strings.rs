@@ -1,5 +1,6 @@
 use super::{generate_from_schema, Generate};
-use serde_json::{json, Value};
+use crate::cbor_helpers::{cbor_map, map_insert};
+use ciborium::Value;
 
 pub struct TextGenerator {
     min_size: usize,
@@ -24,13 +25,13 @@ impl Generate<String> for TextGenerator {
     }
 
     fn schema(&self) -> Option<Value> {
-        let mut schema = json!({
-            "type": "string",
-            "min_size": self.min_size
-        });
+        let mut schema = cbor_map! {
+            "type" => "string",
+            "min_size" => self.min_size as u64
+        };
 
         if let Some(max) = self.max_size {
-            schema["max_size"] = json!(max);
+            map_insert(&mut schema, "max_size", Value::from(max as u64));
         }
 
         Some(schema)
@@ -63,11 +64,11 @@ impl Generate<String> for RegexGenerator {
     }
 
     fn schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "regex",
-            "pattern": self.pattern,
-            "fullmatch": self.fullmatch
-        }))
+        Some(cbor_map! {
+            "type" => "regex",
+            "pattern" => self.pattern.as_str(),
+            "fullmatch" => self.fullmatch
+        })
     }
 }
 
