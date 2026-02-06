@@ -55,7 +55,7 @@ fn test_failing_test_output_with_backtrace() {
     //      1: core::panicking::panic_fmt
     //      2: temp_hegel_test::main::{{closure}}
     //      ...
-    //      N: hegel::embedded::handle_connection
+    //      N: hegel::runner::handle_connection
     //      ...
     //      M: temp_hegel_test::main
     //      ...
@@ -72,7 +72,7 @@ fn test_failing_test_output_with_backtrace() {
         r".*",
         r"\s+2: temp_hegel_test::main::\{\{closure\}\}\n", // frame 2: user's closure
         r".*",
-        r"hegel::embedded::", // hegel internals appear
+        r"hegel::runner::", // hegel internals appear
         r".*",
         r"temp_hegel_test::main\n", // user's main (not closure)
         r".*",
@@ -104,7 +104,7 @@ fn test_failing_test_output_with_full_backtrace() {
         r".*",
         r"temp_hegel_test::main::\{\{closure\}\}", // user's closure
         r".*",
-        r"hegel::embedded::", // hegel internals
+        r"hegel::runner::", // hegel internals
         r".*",
         r"temp_hegel_test::main\n", // user's main
         r".*$",

@@ -1,6 +1,7 @@
 mod binary;
 mod collections;
 mod combinators;
+mod compose;
 mod default;
 mod fixed_dict;
 mod formats;
@@ -17,6 +18,7 @@ mod value;
 pub use binary::binary;
 pub use collections::{hashmaps, hashsets, vecs, HashMapGenerator};
 pub use combinators::{one_of, optional, sampled_from, sampled_from_slice, BoxedGenerator};
+pub use compose::{fnv1a_hash, ComposedGenerator};
 pub use default::DefaultGenerator;
 pub use fixed_dict::fixed_dicts;
 pub use formats::{dates, datetimes, domains, emails, ip_addresses, times, urls};
@@ -34,19 +36,18 @@ pub(crate) use numeric::{FloatGenerator, IntegerGenerator};
 pub(crate) use primitives::BoolGenerator;
 pub(crate) use strings::TextGenerator;
 
-use serde_json::{json, Value};
+use ciborium::Value;
+
+use crate::cbor_helpers::cbor_map;
 
 pub(crate) mod exit_codes {
-    #[allow(dead_code)] // Reserved for future use
-    pub const TEST_FAILURE: i32 = 1;
     pub const SOCKET_ERROR: i32 = 134;
 }
 use std::cell::{Cell, RefCell};
-use std::io::{BufRead, BufReader, Write};
 use std::marker::PhantomData;
-use std::os::unix::net::UnixStream;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+
+use crate::protocol::{Channel, Connection};
 
 // ============================================================================
 // State Management (Thread-Local)
@@ -57,6 +58,8 @@ thread_local! {
     static IS_LAST_RUN: Cell<bool> = const { Cell::new(false) };
     /// Buffer for generated values during final replay
     static GENERATED_VALUES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Whether the test was aborted due to StopTest (server closed channel)
+    pub(crate) static TEST_ABORTED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Check if this is the last run.
@@ -64,7 +67,7 @@ pub(crate) fn is_last_run() -> bool {
     IS_LAST_RUN.with(|r| r.get())
 }
 
-/// Set the is_last_run flag (used by embedded module).
+/// Set the is_last_run flag.
 pub(crate) fn set_is_last_run(is_last: bool) {
     IS_LAST_RUN.with(|r| r.set(is_last));
 }
@@ -92,49 +95,43 @@ pub fn note(message: &str) {
 // Socket Communication with Thread-Local Connection
 // ============================================================================
 
-static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// Thread-local connection state.
-/// Connection exists if and only if span_depth > 0.
+/// Thread-local connection state using the binary protocol.
 pub(crate) struct ConnectionState {
-    writer: UnixStream,
-    reader: BufReader<UnixStream>,
-    span_depth: usize,
+    /// Keep the connection alive (actual I/O goes through channel)
+    #[allow(dead_code)]
+    pub(crate) connection: Arc<Connection>,
+    pub(crate) channel: Channel,
+    pub(crate) span_depth: usize,
 }
 
 thread_local! {
-    static CONNECTION: RefCell<Option<ConnectionState>> = const { RefCell::new(None) };
+    pub(crate) static CONNECTION: RefCell<Option<ConnectionState>> = const { RefCell::new(None) };
 }
 
 fn is_debug() -> bool {
     std::env::var("HEGEL_DEBUG").is_ok()
 }
 
-/// Set the connection from an already-connected stream (used by embedded module).
-/// This is used when the SDK creates a server and accepts connections from hegel.
-pub(crate) fn set_embedded_connection(stream: UnixStream) {
+/// Set the connection for the current test case.
+/// The channel parameter is the test case channel assigned by the server.
+pub(crate) fn set_connection(connection: Arc<Connection>, channel: Channel) {
     CONNECTION.with(|conn| {
         let mut conn = conn.borrow_mut();
         assert!(
             conn.is_none(),
-            "set_embedded_connection called while already connected"
+            "set_connection called while already connected"
         );
 
-        let writer = stream.try_clone().unwrap_or_else(|e| {
-            panic!("Failed to clone socket: {}", e);
-        });
-        let reader = BufReader::new(stream);
-
         *conn = Some(ConnectionState {
-            writer,
-            reader,
+            connection,
+            channel,
             span_depth: 0,
         });
     });
 }
 
-/// Clear the embedded connection (used by embedded module).
-pub(crate) fn clear_embedded_connection() {
+/// Clear the connection after a test case completes.
+pub(crate) fn clear_connection() {
     CONNECTION.with(|conn| {
         *conn.borrow_mut() = None;
     });
@@ -161,78 +158,107 @@ pub(crate) fn decrement_span_depth() {
     });
 }
 
+/// Custom error for StopTest (overflow) condition.
+#[derive(Debug)]
+pub struct StopTestError;
+
+impl std::fmt::Display for StopTestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Server ran out of data (StopTest)")
+    }
+}
+
+impl std::error::Error for StopTestError {}
+
 /// Send a request and receive a response over the thread-local connection.
-pub(crate) fn send_request(command: &str, payload: &Value) -> Value {
+/// Returns Err(StopTestError) if the server sends an overflow error.
+pub(crate) fn send_request(command: &str, payload: &Value) -> Result<Value, StopTestError> {
     let debug = is_debug();
-    let request_id = REQUEST_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
-    let request = json!({
-        "id": request_id,
-        "command": command,
-        "payload": payload
-    });
-    let message = format!("{}\n", request);
+
+    // Build the request message by merging command into the payload map
+    let mut entries = vec![(
+        Value::Text("command".to_string()),
+        Value::Text(command.to_string()),
+    )];
+
+    // Merge payload fields into the request
+    if let Value::Map(map) = payload {
+        for (k, v) in map {
+            entries.push((k.clone(), v.clone()));
+        }
+    }
+
+    let request = Value::Map(entries);
 
     if debug {
-        eprint!("REQUEST: {}", message);
+        eprintln!("REQUEST: {:?}", request);
     }
 
     CONNECTION.with(|conn| {
-        let mut conn = conn.borrow_mut();
+        let conn = conn.borrow();
         let state = conn
-            .as_mut()
+            .as_ref()
             .expect("send_request called without active connection");
 
-        if let Err(e) = state.writer.write_all(message.as_bytes()) {
-            eprintln!("Failed to write to Hegel socket: {}", e);
-            std::process::exit(exit_codes::SOCKET_ERROR);
-        }
+        let result = state.channel.request_cbor(&request);
 
-        let mut response = String::new();
-        if let Err(e) = state.reader.read_line(&mut response) {
-            eprintln!("Failed to read from Hegel socket: {}", e);
-            std::process::exit(exit_codes::SOCKET_ERROR);
-        }
-
-        if debug {
-            eprint!("RESPONSE: {}", response);
-        }
-
-        let parsed: Value = match serde_json::from_str(&response) {
-            Ok(v) => v,
-            Err(e) => {
-                panic!(
-                    "hegel: failed to parse server response as JSON: {}\nResponse: {}",
-                    e, response
-                );
+        match result {
+            Ok(response) => {
+                if debug {
+                    eprintln!("RESPONSE: {:?}", response);
+                }
+                Ok(response)
             }
-        };
-
-        // Verify request ID matches
-        let response_id = parsed.get("id").and_then(|v| v.as_u64());
-        crate::assume(response_id == Some(request_id));
-        crate::assume(parsed.get("error").is_none());
-
-        parsed.get("result").cloned().unwrap_or(Value::Null)
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("overflow") || error_msg.contains("StopTest") {
+                    if debug {
+                        eprintln!("RESPONSE: StopTest/overflow");
+                    }
+                    Err(StopTestError)
+                } else {
+                    eprintln!("Failed to communicate with Hegel: {}", e);
+                    std::process::exit(exit_codes::SOCKET_ERROR);
+                }
+            }
+        }
     })
 }
 
-pub(crate) fn request_from_schema(schema: &Value) -> Value {
-    send_request("generate", schema)
+pub(crate) fn request_from_schema(schema: &Value) -> Result<Value, StopTestError> {
+    match send_request("generate", &cbor_map! {"schema" => schema.clone()}) {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            // Mark test as aborted - server has closed the channel
+            TEST_ABORTED.with(|aborted| aborted.set(true));
+            Err(e)
+        }
+    }
 }
 
 /// Generate a value from a schema.
 pub fn generate_from_schema<T: serde::de::DeserializeOwned>(schema: &Value) -> T {
-    let result = request_from_schema(schema);
+    let result = match request_from_schema(schema) {
+        Ok(v) => v,
+        Err(StopTestError) => {
+            // Server ran out of data - reject this test case
+            crate::assume(false);
+            unreachable!("assume(false) should not return")
+        }
+    };
 
     if is_last_run() {
-        buffer_generated_value(&format!("Generated: {}", result));
+        buffer_generated_value(&format!(
+            "Generated: {}",
+            crate::cbor_helpers::display_value(&result)
+        ));
     }
 
-    // Convert to HegelValue to handle NaN/Infinity sentinel strings
+    // Convert to HegelValue — ciborium::Value natively preserves NaN/Infinity
     let hegel_value = value::HegelValue::from(result.clone());
     value::from_hegel_value(hegel_value).unwrap_or_else(|e| {
         panic!(
-            "hegel: failed to deserialize server response: {}\nValue: {}",
+            "hegel: failed to deserialize server response: {}\nValue: {:?}",
             e, result
         );
     })
@@ -244,7 +270,10 @@ pub fn generate_from_schema<T: serde::de::DeserializeOwned>(schema: &Value) -> T
 /// which improves shrinking. Call `stop_span()` when done.
 pub fn start_span(label: u64) {
     increment_span_depth();
-    send_request("start_span", &json!({"label": label}));
+    if let Err(StopTestError) = send_request("start_span", &cbor_map! {"label" => label}) {
+        decrement_span_depth();
+        crate::assume(false);
+    }
 }
 
 /// Stop the current span.
@@ -253,7 +282,8 @@ pub fn start_span(label: u64) {
 /// (e.g., because a filter rejected it).
 pub fn stop_span(discard: bool) {
     decrement_span_depth();
-    send_request("stop_span", &json!({"discard": discard}));
+    // Ignore StopTest errors from stop_span - we're already closing
+    let _ = send_request("stop_span", &cbor_map! {"discard" => discard});
 }
 
 // ============================================================================
@@ -306,6 +336,8 @@ pub mod labels {
     pub const FILTER: u64 = 12;
     pub const ENUM_VARIANT: u64 = 13;
     pub const SAMPLED_FROM: u64 = 14;
+    /// For .map() transformations (distinct from MAP which is for collections)
+    pub const MAPPED: u64 = 15;
 }
 
 // ============================================================================

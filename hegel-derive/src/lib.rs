@@ -78,6 +78,28 @@ pub fn derive_generate(input: TokenStream) -> TokenStream {
     }
 }
 
+/// Helper to generate a cbor map expression in proc macro output.
+/// Returns a token stream that creates `ciborium::Value::Map(vec![...])`.
+fn cbor_map_tokens(
+    entries: Vec<(String, proc_macro2::TokenStream)>,
+) -> proc_macro2::TokenStream {
+    let pairs: Vec<proc_macro2::TokenStream> = entries
+        .into_iter()
+        .map(|(key, value)| {
+            quote! {
+                (
+                    ciborium::Value::Text(#key.to_string()),
+                    #value,
+                )
+            }
+        })
+        .collect();
+
+    quote! {
+        ciborium::Value::Map(vec![#(#pairs),*])
+    }
+}
+
 /// Derive Generate for a struct.
 fn derive_struct_generate(input: &DeriveInput, data: &syn::DataStruct) -> TokenStream {
     let name = &input.ident;
@@ -163,15 +185,18 @@ fn derive_struct_generate(input: &DeriveInput, data: &syn::DataStruct) -> TokenS
 
     // Generate schema() implementation
     let schema_fields = field_names.iter().map(|name| {
-        let name_str = name.to_string();
         quote! {
             {
                 let field_schema = self.#name.schema()?;
-                properties.insert(#name_str.to_string(), field_schema);
-                required.push(serde_json::json!(#name_str));
+                elements.push(field_schema);
             }
         }
     });
+
+    let schema_body = cbor_map_tokens(vec![
+        ("type".to_string(), quote! { ciborium::Value::Text("tuple".to_string()) }),
+        ("elements".to_string(), quote! { ciborium::Value::Array(elements) }),
+    ]);
 
     let expanded = quote! {
         /// Generated generator for #name.
@@ -211,19 +236,14 @@ fn derive_struct_generate(input: &DeriveInput, data: &syn::DataStruct) -> TokenS
                 }
             }
 
-            fn schema(&self) -> Option<serde_json::Value> {
+            fn schema(&self) -> Option<ciborium::Value> {
                 use hegel::gen::Generate;
 
-                let mut properties = serde_json::Map::new();
-                let mut required = Vec::new();
+                let mut elements = Vec::new();
 
                 #(#schema_fields)*
 
-                Some(serde_json::json!({
-                    "type": "object",
-                    "properties": properties,
-                    "required": required
-                }))
+                Some(#schema_body)
             }
         }
     };
@@ -432,7 +452,10 @@ fn derive_enum_generate(input: &DeriveInput, data: &syn::DataEnum) -> TokenStrea
         .iter()
         .map(|variant| {
             let variant_name_str = variant.ident.to_string();
-            quote! { serde_json::json!({ "const": #variant_name_str }) }
+            let entry = cbor_map_tokens(vec![
+                ("const".to_string(), quote! { ciborium::Value::Text(#variant_name_str.to_string()) }),
+            ]);
+            quote! { #entry }
         })
         .collect();
 
@@ -524,24 +547,38 @@ fn derive_enum_generate(input: &DeriveInput, data: &syn::DataEnum) -> TokenStrea
         }
     };
 
+    // Build sampled_from schema for variant selection
+    let sampled_from_schema = {
+        let variant_cbor_values: Vec<_> = all_variant_names.iter().map(|name| {
+            quote! { ciborium::Value::Text(#name.to_string()) }
+        }).collect();
+
+        cbor_map_tokens(vec![
+            ("sampled_from".to_string(), quote! { ciborium::Value::Array(vec![#(#variant_cbor_values),*]) }),
+        ])
+    };
+
     // Generate the schema() implementation
     let schema_impl = if data_variants.is_empty() {
         // All unit variants - pure sampled_from schema
         quote! {
-            fn schema(&self) -> Option<serde_json::Value> {
-                let variants: Vec<&str> = vec![#(#all_variant_names),*];
-                Some(serde_json::json!({ "sampled_from": variants }))
+            fn schema(&self) -> Option<ciborium::Value> {
+                Some(#sampled_from_schema)
             }
         }
     } else {
+        let one_of_schema = cbor_map_tokens(vec![
+            ("one_of".to_string(), quote! { ciborium::Value::Array(one_of) }),
+        ]);
+
         quote! {
-            fn schema(&self) -> Option<serde_json::Value> {
+            fn schema(&self) -> Option<ciborium::Value> {
                 use hegel::gen::Generate;
 
                 let mut one_of = Vec::new();
                 #(one_of.push(#unit_schema_entries);)*
                 #(one_of.push(#data_schema_entries);)*
-                Some(serde_json::json!({ "one_of": one_of }))
+                Some(#one_of_schema)
             }
         }
     };
@@ -551,9 +588,8 @@ fn derive_enum_generate(input: &DeriveInput, data: &syn::DataEnum) -> TokenStrea
         // All unit variants - just sample from names
         quote! {
             fn generate(&self) -> #enum_name {
-                let variants: Vec<&str> = vec![#(#all_variant_names),*];
                 let selected: String = hegel::gen::generate_from_schema(
-                    &serde_json::json!({ "sampled_from": variants })
+                    &#sampled_from_schema
                 );
 
                 match selected.as_str() {
@@ -573,9 +609,8 @@ fn derive_enum_generate(input: &DeriveInput, data: &syn::DataEnum) -> TokenStrea
                 } else {
                     // Compositional fallback with grouping
                     hegel::gen::group(hegel::gen::labels::ENUM_VARIANT, || {
-                        let variants: Vec<&str> = vec![#(#all_variant_names),*];
                         let selected: String = hegel::gen::generate_from_schema(
-                            &serde_json::json!({ "sampled_from": variants })
+                            &#sampled_from_schema
                         );
 
                         match selected.as_str() {
@@ -689,19 +724,43 @@ fn generate_variant_generator(enum_name: &syn::Ident, variant: &Variant) -> proc
                 .collect();
 
             // Generate schema properties
-            let schema_properties: Vec<_> = field_names
+            let schema_property_entries: Vec<_> = field_names
                 .iter()
                 .map(|field_name| {
                     let field_name_str = field_name.to_string();
                     quote! {
                         {
                             let field_schema = self.#field_name.schema()?;
-                            inner_properties.insert(#field_name_str.to_string(), field_schema);
-                            inner_required.push(serde_json::json!(#field_name_str));
+                            inner_props.push((
+                                ciborium::Value::Text(#field_name_str.to_string()),
+                                field_schema,
+                            ));
+                            inner_required.push(ciborium::Value::Text(#field_name_str.to_string()));
                         }
                     }
                 })
                 .collect();
+
+            let inner_schema_expr = cbor_map_tokens(vec![
+                ("type".to_string(), quote! { ciborium::Value::Text("object".to_string()) }),
+                ("properties".to_string(), quote! { ciborium::Value::Map(inner_props) }),
+                ("required".to_string(), quote! { ciborium::Value::Array(inner_required) }),
+            ]);
+
+            let outer_schema_expr = cbor_map_tokens(vec![
+                ("type".to_string(), quote! { ciborium::Value::Text("object".to_string()) }),
+                ("properties".to_string(), quote! {
+                    ciborium::Value::Map(vec![(
+                        ciborium::Value::Text(#variant_name_str.to_string()),
+                        inner_schema,
+                    )])
+                }),
+                ("required".to_string(), quote! {
+                    ciborium::Value::Array(vec![
+                        ciborium::Value::Text(#variant_name_str.to_string()),
+                    ])
+                }),
+            ]);
 
             quote! {
                 /// Generated generator for the #variant_name variant of #enum_name.
@@ -740,33 +799,37 @@ fn generate_variant_generator(enum_name: &syn::Ident, variant: &Variant) -> proc
                         }
                     }
 
-                    fn schema(&self) -> Option<serde_json::Value> {
+                    fn schema(&self) -> Option<ciborium::Value> {
                         use hegel::gen::Generate;
 
-                        let mut inner_properties = serde_json::Map::new();
+                        let mut inner_props = Vec::new();
                         let mut inner_required = Vec::new();
 
-                        #(#schema_properties)*
+                        #(#schema_property_entries)*
 
-                        let inner_schema = serde_json::json!({
-                            "type": "object",
-                            "properties": inner_properties,
-                            "required": inner_required
-                        });
+                        let inner_schema = #inner_schema_expr;
 
-                        let mut outer_properties = serde_json::Map::new();
-                        outer_properties.insert(#variant_name_str.to_string(), inner_schema);
-
-                        Some(serde_json::json!({
-                            "type": "object",
-                            "properties": outer_properties,
-                            "required": [#variant_name_str]
-                        }))
+                        Some(#outer_schema_expr)
                     }
                 }
             }
         }
         VariantKind::TupleSingle { field_type } => {
+            let outer_schema_expr = cbor_map_tokens(vec![
+                ("type".to_string(), quote! { ciborium::Value::Text("object".to_string()) }),
+                ("properties".to_string(), quote! {
+                    ciborium::Value::Map(vec![(
+                        ciborium::Value::Text(#variant_name_str.to_string()),
+                        inner_schema,
+                    )])
+                }),
+                ("required".to_string(), quote! {
+                    ciborium::Value::Array(vec![
+                        ciborium::Value::Text(#variant_name_str.to_string()),
+                    ])
+                }),
+            ]);
+
             quote! {
                 /// Generated generator for the #variant_name variant of #enum_name.
                 pub struct #variant_generator_name<'a> {
@@ -811,19 +874,12 @@ fn generate_variant_generator(enum_name: &syn::Ident, variant: &Variant) -> proc
                         #enum_name::#variant_name(self.value.generate())
                     }
 
-                    fn schema(&self) -> Option<serde_json::Value> {
+                    fn schema(&self) -> Option<ciborium::Value> {
                         use hegel::gen::Generate;
 
                         let inner_schema = self.value.schema()?;
 
-                        let mut outer_properties = serde_json::Map::new();
-                        outer_properties.insert(#variant_name_str.to_string(), inner_schema);
-
-                        Some(serde_json::json!({
-                            "type": "object",
-                            "properties": outer_properties,
-                            "required": [#variant_name_str]
-                        }))
+                        Some(#outer_schema_expr)
                     }
                 }
             }
@@ -894,6 +950,26 @@ fn generate_variant_generator(enum_name: &syn::Ident, variant: &Variant) -> proc
                 })
                 .collect();
 
+            let inner_schema_expr = cbor_map_tokens(vec![
+                ("type".to_string(), quote! { ciborium::Value::Text("tuple".to_string()) }),
+                ("elements".to_string(), quote! { ciborium::Value::Array(elements) }),
+            ]);
+
+            let outer_schema_expr = cbor_map_tokens(vec![
+                ("type".to_string(), quote! { ciborium::Value::Text("object".to_string()) }),
+                ("properties".to_string(), quote! {
+                    ciborium::Value::Map(vec![(
+                        ciborium::Value::Text(#variant_name_str.to_string()),
+                        inner_schema,
+                    )])
+                }),
+                ("required".to_string(), quote! {
+                    ciborium::Value::Array(vec![
+                        ciborium::Value::Text(#variant_name_str.to_string()),
+                    ])
+                }),
+            ]);
+
             quote! {
                 /// Generated generator for the #variant_name variant of #enum_name.
                 pub struct #variant_generator_name<'a> {
@@ -929,24 +1005,14 @@ fn generate_variant_generator(enum_name: &syn::Ident, variant: &Variant) -> proc
                         #enum_name::#variant_name(#(#field_generates,)*)
                     }
 
-                    fn schema(&self) -> Option<serde_json::Value> {
+                    fn schema(&self) -> Option<ciborium::Value> {
                         use hegel::gen::Generate;
 
-                        let elements: Vec<serde_json::Value> = vec![#(#schema_items,)*];
+                        let elements: Vec<ciborium::Value> = vec![#(#schema_items,)*];
 
-                        let inner_schema = serde_json::json!({
-                            "type": "tuple",
-                            "elements": elements
-                        });
+                        let inner_schema = #inner_schema_expr;
 
-                        let mut outer_properties = serde_json::Map::new();
-                        outer_properties.insert(#variant_name_str.to_string(), inner_schema);
-
-                        Some(serde_json::json!({
-                            "type": "object",
-                            "properties": outer_properties,
-                            "required": [#variant_name_str]
-                        }))
+                        Some(#outer_schema_expr)
                     }
                 }
             }

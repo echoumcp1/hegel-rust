@@ -8,5 +8,13 @@
 .hegel
 __pycache__
 target/
-.claude/settings.local.json
+**/.claude/
 result
+.claude-reliability/
+.claude/reliability-config.yml
+
+# claude-reliability managed
+.claude/bin/
+.claude/*.local.md
+.claude/*.local.json
+.claude/*.local

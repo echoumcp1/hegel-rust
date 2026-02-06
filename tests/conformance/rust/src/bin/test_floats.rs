@@ -48,12 +48,8 @@ fn main() {
         if params.exclude_max {
             gen = gen.exclude_max();
         }
-        if params.allow_nan {
-            gen = gen.allow_nan();
-        }
-        if params.allow_infinity {
-            gen = gen.allow_infinity();
-        }
+        gen = gen.allow_nan(params.allow_nan);
+        gen = gen.allow_infinity(params.allow_infinity);
 
         let value = gen.generate();
         write(&Metrics {

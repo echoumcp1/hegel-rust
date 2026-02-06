@@ -25,9 +25,9 @@
 //! # });
 //! ```
 
+use ciborium::Value;
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
-use serde_json::Value;
 
 use super::{binary, integers, Generate};
 

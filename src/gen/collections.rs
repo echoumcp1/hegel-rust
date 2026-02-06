@@ -1,5 +1,6 @@
 use super::{generate_from_schema, group, integers, labels, Generate};
-use serde_json::{json, Value};
+use crate::cbor_helpers::{cbor_map, map_insert};
+use ciborium::Value;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
@@ -57,14 +58,14 @@ where
 
         let schema_type = if self.unique { "set" } else { "list" };
 
-        let mut schema = json!({
-            "type": schema_type,
-            "elements": element_schema,
-            "min_size": self.min_size
-        });
+        let mut schema = cbor_map! {
+            "type" => schema_type,
+            "elements" => element_schema,
+            "min_size" => self.min_size as u64
+        };
 
         if let Some(max) = self.max_size {
-            schema["max_size"] = json!(max);
+            map_insert(&mut schema, "max_size", Value::from(max as u64));
         }
 
         Some(schema)
@@ -139,14 +140,14 @@ where
     fn schema(&self) -> Option<Value> {
         let element_schema = self.elements.schema()?;
 
-        let mut schema = json!({
-            "type": "set",
-            "elements": element_schema,
-            "min_size": self.min_size
-        });
+        let mut schema = cbor_map! {
+            "type" => "set",
+            "elements" => element_schema,
+            "min_size" => self.min_size as u64
+        };
 
         if let Some(max) = self.max_size {
-            schema["max_size"] = json!(max);
+            map_insert(&mut schema, "max_size", Value::from(max as u64));
         }
 
         Some(schema)
@@ -221,15 +222,15 @@ where
         let key_schema = self.keys.schema()?;
         let value_schema = self.values.schema()?;
 
-        let mut schema = json!({
-            "type": "dict",
-            "keys": key_schema,
-            "values": value_schema,
-            "min_size": self.min_size
-        });
+        let mut schema = cbor_map! {
+            "type" => "dict",
+            "keys" => key_schema,
+            "values" => value_schema,
+            "min_size" => self.min_size as u64
+        };
 
         if let Some(max) = self.max_size {
-            schema["max_size"] = json!(max);
+            map_insert(&mut schema, "max_size", Value::from(max as u64));
         }
 
         Some(schema)

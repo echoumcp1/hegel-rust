@@ -1,6 +1,7 @@
 use super::{generate_from_schema, Generate};
+use crate::cbor_helpers::{cbor_map, cbor_serialize, map_insert};
+use ciborium::Value;
 use num::{Bounded, Float as NumFloat, Integer as NumInteger};
-use serde_json::{json, Value};
 use std::marker::PhantomData;
 
 pub struct IntegerGenerator<T> {
@@ -37,11 +38,11 @@ where
         let min = self.min.unwrap_or_else(T::min_value);
         let max = self.max.unwrap_or_else(T::max_value);
 
-        Some(json!({
-            "type": "integer",
-            "minimum": min,
-            "maximum": max
-        }))
+        Some(cbor_map! {
+            "type" => "integer",
+            "minimum" => cbor_serialize(&min),
+            "maximum" => cbor_serialize(&max)
+        })
     }
 }
 
@@ -134,34 +135,34 @@ where
     }
 
     fn schema(&self) -> Option<Value> {
-        let width = (std::mem::size_of::<T>() * 8) as u8;
+        let width = (std::mem::size_of::<T>() * 8) as u64;
 
-        let mut schema = json!({
-            "type": "number",
-            "exclude_minimum": self.exclude_min,
-            "exclude_maximum": self.exclude_max,
-            "allow_nan": self.allow_nan,
-            "allow_infinity": self.allow_infinity,
-            "width": width,
-        });
+        let mut schema = cbor_map! {
+            "type" => "number",
+            "exclude_minimum" => self.exclude_min,
+            "exclude_maximum" => self.exclude_max,
+            "allow_nan" => self.allow_nan,
+            "allow_infinity" => self.allow_infinity,
+            "width" => width
+        };
 
         // Include user-specified bounds
         if let Some(ref min) = self.min {
-            schema["minimum"] = json!(min);
+            map_insert(&mut schema, "minimum", cbor_serialize(min));
         }
         if let Some(ref max) = self.max {
-            schema["maximum"] = json!(max);
+            map_insert(&mut schema, "maximum", cbor_serialize(max));
         }
 
         // When generating finite values without explicit bounds, add type
-        // bounds to prevent overflow during JSON deserialization (the protocol
+        // bounds to prevent overflow during deserialization (the protocol
         // uses f64, so f32 values near MAX can overflow when round-tripped)
         if !self.allow_nan && !self.allow_infinity {
             if self.min.is_none() {
-                schema["minimum"] = json!(T::min_value());
+                map_insert(&mut schema, "minimum", cbor_serialize(&T::min_value()));
             }
             if self.max.is_none() {
-                schema["maximum"] = json!(T::max_value());
+                map_insert(&mut schema, "maximum", cbor_serialize(&T::max_value()));
             }
         }
 

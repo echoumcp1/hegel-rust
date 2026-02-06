@@ -87,7 +87,7 @@ macro_rules! derive_generator {
                     }
                 }
 
-                fn schema(&self) -> Option<serde_json::Value> {
+                fn schema(&self) -> Option<ciborium::Value> {
                     use $crate::gen::Generate;
 
                     let mut elements = Vec::new();
@@ -97,10 +97,16 @@ macro_rules! derive_generator {
                         elements.push(field_schema);
                     )*
 
-                    Some(serde_json::json!({
-                        "type": "tuple",
-                        "elements": elements
-                    }))
+                    Some(ciborium::Value::Map(vec![
+                        (
+                            ciborium::Value::Text("type".to_string()),
+                            ciborium::Value::Text("tuple".to_string()),
+                        ),
+                        (
+                            ciborium::Value::Text("elements".to_string()),
+                            ciborium::Value::Array(elements),
+                        ),
+                    ]))
                 }
             }
         }

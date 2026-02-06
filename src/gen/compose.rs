@@ -1,0 +1,93 @@
+use super::Generate;
+use ciborium::Value;
+
+/// A generator created from imperative code that calls `.generate()` on other generators.
+///
+/// Use the `compose!` macro to create instances of this type.
+///
+/// `ComposedGenerator` wraps a closure that produces values by composing
+/// multiple generator calls together. It has no schema (returns `None`),
+/// since the composition is imperative and cannot be described as a single schema.
+pub struct ComposedGenerator<T, F> {
+    f: F,
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T, F> ComposedGenerator<T, F>
+where
+    F: Fn() -> T,
+{
+    /// Create a new `ComposedGenerator` from a closure.
+    ///
+    /// Prefer using the `compose!` macro instead, which automatically
+    /// wraps the body in a labeled span for better shrinking.
+    pub fn new(f: F) -> Self {
+        ComposedGenerator {
+            f,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T, F> Generate<T> for ComposedGenerator<T, F>
+where
+    F: Fn() -> T + Send + Sync,
+{
+    fn generate(&self) -> T {
+        (self.f)()
+    }
+
+    fn schema(&self) -> Option<Value> {
+        None
+    }
+}
+
+// Safety: ComposedGenerator is Send+Sync if F is Send+Sync
+unsafe impl<T, F: Send> Send for ComposedGenerator<T, F> {}
+unsafe impl<T, F: Sync> Sync for ComposedGenerator<T, F> {}
+
+/// Compile-time FNV-1a hash of a byte slice, producing a u64 label.
+pub const fn fnv1a_hash(bytes: &[u8]) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut hash = FNV_OFFSET;
+    let mut i = 0;
+    while i < bytes.len() {
+        hash ^= bytes[i] as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+        i += 1;
+    }
+    hash
+}
+
+/// Create a generator from imperative code that calls `.generate()` on other generators.
+///
+/// This is analogous to Hypothesis's `@composite` decorator. The body can call
+/// `.generate()` on any generators and combine the results in arbitrary ways.
+///
+/// # Example
+///
+/// ```no_run
+/// use hegel::gen::{self, Generate};
+///
+/// let gen = hegel::compose!({
+///     let x = gen::integers::<i32>().with_min(0).with_max(10).generate();
+///     let y = gen::integers::<i32>().with_min(x).with_max(100).generate();
+///     (x, y)
+/// });
+/// ```
+///
+/// # Shrinking
+///
+/// The body is wrapped in a labeled span derived from a hash of the source code,
+/// which helps the testing engine understand the structure of generated data
+/// and improve shrinking.
+#[macro_export]
+macro_rules! compose {
+    ({ $($body:tt)* }) => {{
+        const LABEL: u64 = $crate::gen::fnv1a_hash(stringify!($($body)*).as_bytes());
+        $crate::gen::ComposedGenerator::new(move || {
+            $crate::gen::group(LABEL, || { $($body)* })
+        })
+    }};
+}

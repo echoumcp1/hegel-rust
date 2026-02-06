@@ -1,5 +1,6 @@
 use super::{generate_from_schema, group, labels, BoxedGenerator, Generate};
-use serde_json::{json, Value};
+use crate::cbor_helpers::{cbor_map, cbor_serialize};
+use ciborium::Value;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -10,7 +11,7 @@ pub(crate) struct MappedToValue<T, G> {
 
 impl<T: serde::Serialize, G: Generate<T>> Generate<Value> for MappedToValue<T, G> {
     fn generate(&self) -> Value {
-        json!(self.inner.generate())
+        cbor_serialize(&self.inner.generate())
     }
 
     fn schema(&self) -> Option<Value> {
@@ -56,20 +57,23 @@ impl<'a> Generate<Value> for FixedDictGenerator<'a> {
     fn generate(&self) -> Value {
         if let Some(schema) = self.schema() {
             let values: Vec<Value> = generate_from_schema(&schema);
-            // Convert tuple back to object
-            let mut map = serde_json::Map::new();
-            for ((name, _), value) in self.fields.iter().zip(values) {
-                map.insert(name.clone(), value);
-            }
-            Value::Object(map)
+            // Convert tuple back to object (map)
+            let entries: Vec<(Value, Value)> = self
+                .fields
+                .iter()
+                .zip(values)
+                .map(|((name, _), value)| (Value::Text(name.clone()), value))
+                .collect();
+            Value::Map(entries)
         } else {
             // Compositional fallback
             group(labels::FIXED_DICT, || {
-                let mut map = serde_json::Map::new();
-                for (name, gen) in &self.fields {
-                    map.insert(name.clone(), gen.generate());
-                }
-                Value::Object(map)
+                let entries: Vec<(Value, Value)> = self
+                    .fields
+                    .iter()
+                    .map(|(name, gen)| (Value::Text(name.clone()), gen.generate()))
+                    .collect();
+                Value::Map(entries)
             })
         }
     }
@@ -82,10 +86,10 @@ impl<'a> Generate<Value> for FixedDictGenerator<'a> {
             elements.push(field_schema);
         }
 
-        Some(json!({
-            "type": "tuple",
-            "elements": elements
-        }))
+        Some(cbor_map! {
+            "type" => "tuple",
+            "elements" => Value::Array(elements)
+        })
     }
 }
 
