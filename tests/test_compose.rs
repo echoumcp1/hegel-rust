@@ -6,11 +6,9 @@ use hegel::gen::{self, Generate};
 #[test]
 fn test_compose_basic() {
     hegel::hegel(|| {
-        let value = hegel::compose!({
-            let x = gen::integers::<i32>().with_min(0).with_max(100).generate();
-            x
-        })
-        .generate();
+        let value =
+            hegel::compose!({ gen::integers::<i32>().with_min(0).with_max(100).generate() })
+                .generate();
         assert!((0..=100).contains(&value));
     });
 }
@@ -33,12 +31,9 @@ fn test_compose_dependent_generation() {
 #[test]
 fn test_compose_with_map() {
     hegel::hegel(|| {
-        let value = hegel::compose!({
-            let n = gen::integers::<i32>().with_min(0).with_max(10).generate();
-            n
-        })
-        .map(|n| n * 2)
-        .generate();
+        let value = hegel::compose!({ gen::integers::<i32>().with_min(0).with_max(10).generate() })
+            .map(|n| n * 2)
+            .generate();
         assert!(value % 2 == 0);
         assert!((0..=20).contains(&value));
     });

@@ -1,3 +1,10 @@
+check:
+    cargo fmt --check
+    cargo clippy --all-features --tests -- -D warnings
+    RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
+    cargo test
+    cargo test --all-features
+
 docs:
     cargo clean --doc && cargo doc --open --all-features --no-deps
 
