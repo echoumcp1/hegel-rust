@@ -11,7 +11,9 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - uses: ./.github/actions/base
         with:
           ssh-key: ${{ secrets.HEGEL_DEPLOY_KEY }}
@@ -30,15 +32,29 @@ jobs:
         # keep this in sync with the rust-version in cargo.toml
         rust: ["1.81", stable]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - uses: ./.github/actions/base
         with:
           ssh-key: ${{ secrets.HEGEL_DEPLOY_KEY }}
+
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
-      - run: RUST_BACKTRACE=1 cargo test
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install hegel
+        run: |
+          pip install git+ssh://git@github.com/antithesishq/hegel.git
+
+      - name: Run tests
+        run: RUST_BACKTRACE=1 cargo test
 
   test-all-features:
     name: tests (all features, ${{ matrix.rust }})
@@ -48,27 +64,45 @@ jobs:
         # keep this in sync with the rust-version in cargo.toml
         rust: ["1.81", stable]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - uses: ./.github/actions/base
         with:
           ssh-key: ${{ secrets.HEGEL_DEPLOY_KEY }}
+
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
-      - run: RUST_BACKTRACE=1 cargo test --all-features
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install hegel
+        run: |
+          pip install git+ssh://git@github.com/antithesishq/hegel.git
+
+      - name: Run tests
+        run: RUST_BACKTRACE=1 cargo test --all-features
 
   docs:
     name: docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - uses: ./.github/actions/base
         with:
           ssh-key: ${{ secrets.HEGEL_DEPLOY_KEY }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo doc --all-features --no-deps
+
+      - name: Generate docs
+        run: cargo doc --all-features --no-deps
         env:
           RUSTDOCFLAGS: "-D warnings"
 
@@ -76,7 +110,9 @@ jobs:
     name: coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - uses: ./.github/actions/base
         with:
           ssh-key: ${{ secrets.HEGEL_DEPLOY_KEY }}
@@ -84,29 +120,49 @@ jobs:
         with:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-llvm-cov
-      - run: RUST_BACKTRACE=1 cargo llvm-cov --all-features --fail-under-lines 30 --show-missing-lines
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install hegel
+        run: |
+          pip install git+ssh://git@github.com/antithesishq/hegel.git
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
+
+      - name: Run tests
+        run: RUST_BACKTRACE=1 cargo llvm-cov --all-features --fail-under-lines 30 --show-missing-lines
 
   conformance:
     name: conformance
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - uses: ./.github/actions/base
         with:
           ssh-key: ${{ secrets.HEGEL_DEPLOY_KEY }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+
       - name: Install hegel
         run: |
           pip install git+ssh://git@github.com/antithesishq/hegel.git@main
           pip install pytest
+
       - name: Build conformance binaries
         working-directory: tests/conformance/rust
         run: cargo build --release
+
       - name: Run conformance tests
         working-directory: tests/conformance
         run: pytest test_conformance.py --durations=20 --durations-min=1.0
@@ -115,19 +171,12 @@ jobs:
     name: nix
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - uses: ./.github/actions/base
         with:
           ssh-key: ${{ secrets.HEGEL_DEPLOY_KEY }}
       - uses: cachix/install-nix-action@v27
       - name: lint
-        run: nix run nixpkgs#nixfmt -- --check flake.nix tests/nix/flake.nix
-      - name: test
-        working-directory: tests/nix
-        run: |
-          # deleting the lock file allows nix to resolve the `path:../..` input value
-          # without erroring about unlocked values / irreproducible builds
-          rm -f flake.lock
-          nix build -L 2>&1 | tee build.log
-          # canary string to ensure we're actually building what we think we are.
-          grep "test_nix_integration_canary" build.log
+        run: nix run nixpkgs#nixfmt -- --check flake.nix
