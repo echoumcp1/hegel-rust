@@ -9,12 +9,17 @@ This is the Rust SDK for Hegel, a universal property-based testing framework. Th
 ## Build & Test Commands
 
 ```bash
+just check                          # Full CI: fmt --check + clippy + docs + test + test --all-features
 just test                           # cargo test
+just lint                           # cargo fmt --check + cargo clippy
 just format                         # cargo fmt
-just docs                           # cargo doc --open --all-features
+just docs                           # cargo doc --open --all-features --no-deps
+just coverage                       # cargo llvm-cov (requires cargo-llvm-cov + llvm-tools-preview)
 cargo test test_name                # Run single test
 cargo test --all-features           # Run tests including optional features
 ```
+
+MSRV is 1.81 (enforced in CI and Cargo.toml).
 
 ## Crate Structure
 
@@ -22,6 +27,7 @@ cargo test --all-features           # Run tests including optional features
 hegel-rust/
 ├── src/
 │   ├── lib.rs          # Public API: hegel(), Hegel builder, assume(), note()
+│   ├── protocol.rs     # Binary protocol: packet encoding/decoding, channel multiplexing
 │   ├── cbor_helpers.rs # Macros and helpers for ciborium::Value (cbor_map!, cbor_array!, map_get, etc.)
 │   ├── runner.rs       # Spawns hegel CLI, manages socket server
 │   └── gen/            # Generator implementations
@@ -38,7 +44,8 @@ hegel-rust/
 │       ├── macros.rs       # one_of!(), derive_generator!() macros
 │       ├── binary.rs       # binary() for Vec<u8> generation
 │       ├── random.rs       # randoms() for RNG generation (requires "rand" feature)
-│       └── value.rs        # HegelValue wrapper for NaN/Infinity handling
+│       ├── value.rs        # HegelValue wrapper for NaN/Infinity handling
+│       └── compose.rs      # ComposedGenerator, compose!() macro
 ├── hegel-derive/       # Proc macro crate for #[derive(Generate)]
 │   └── src/lib.rs      # Derives generators for structs and enums
 └── build.rs            # Auto-installs hegel CLI via uv if not on PATH
