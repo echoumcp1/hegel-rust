@@ -222,9 +222,9 @@ pub use gen::Generate;
 
 // Re-export for macro use
 #[doc(hidden)]
-pub use paste;
-#[doc(hidden)]
 pub use ciborium;
+#[doc(hidden)]
+pub use paste;
 
 // re-export public api
 pub use hegel_derive::Generate;
