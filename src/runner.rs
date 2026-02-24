@@ -222,7 +222,7 @@ pub struct Hegel<F> {
     test_fn: F,
     test_cases: u64,
     verbosity: Verbosity,
-    seed: Value,
+    seed: Option<i64>,
 }
 
 impl<F> Hegel<F>
@@ -235,7 +235,7 @@ where
             test_fn,
             test_cases: 100,
             verbosity: Verbosity::Normal,
-            seed: Value::Null,
+            seed: None,
         }
     }
 
@@ -251,8 +251,8 @@ where
         self
     }
 
-    pub fn seed(mut self, seed: i64) -> Self {
-        self.seed = Value::Integer(seed.into());
+    pub fn seed(mut self, seed: Option<i64>) -> Self {
+        self.seed = seed;
         self
     }
 
@@ -379,7 +379,7 @@ where
             "command" => "run_test",
             "name" => "test",
             "test_cases" => self.test_cases,
-            "seed" => self.seed,
+            "seed" => self.seed.map_or(Value::Null, |seed| Value::Integer(seed.into())),
             "channel_id" => test_channel.channel_id
         };
 
