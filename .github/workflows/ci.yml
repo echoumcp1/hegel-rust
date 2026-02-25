@@ -38,6 +38,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Install just
+        run: sudo apt-get update && sudo apt-get install -y just
       - run: just check-format
       - run: just lint
 
@@ -150,6 +152,9 @@ jobs:
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov
 
+      - name: Install just
+        run: sudo apt-get update && sudo apt-get install -y just
+
       - name: Run tests
         run: RUST_BACKTRACE=1 just check-coverage
 
@@ -176,6 +181,9 @@ jobs:
           pip install git+ssh://git@github.com/antithesishq/hegel.git
           pip install pytest
 
+      - name: Install just
+        run: sudo apt-get update && sudo apt-get install -y just
+
       - name: Build conformance binaries
         working-directory: tests/conformance/rust
         run: cargo build --release
@@ -194,6 +202,8 @@ jobs:
         with:
           ssh-key: ${{ secrets.HEGEL_DEPLOY_KEY }}
       - uses: cachix/install-nix-action@v27
+      - name: Install just
+        run: sudo apt-get update && sudo apt-get install -y just
       - name: lint
         run: just check-format-nix
 
