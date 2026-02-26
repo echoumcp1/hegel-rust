@@ -9,49 +9,29 @@ This is the Rust SDK for Hegel, a universal property-based testing framework. Th
 ## Build & Test Commands
 
 ```bash
-just check                          # Full CI: fmt --check + clippy + docs + test + test --all-features
-just test                           # cargo test
-just lint                           # cargo fmt --check + cargo clippy
+just check                          # Full CI: check-format + lint + check-test + check-docs
+just test                           # cargo test --all-features
+just lint                           # cargo clippy --all-features --tests -- -D warnings
 just format                         # cargo fmt
 just docs                           # cargo doc --open --all-features --no-deps
-just coverage                       # cargo llvm-cov (requires cargo-llvm-cov + llvm-tools-preview)
+just check-conformance              # pytest conformance tests (requires Python environment)
+just check-coverage                 # cargo llvm-cov --fail-under-lines 30 (requires cargo-llvm-cov + llvm-tools-preview)
 cargo test test_name                # Run single test
-cargo test --all-features           # Run tests including optional features
 ```
 
-MSRV is 1.81 (enforced in CI and Cargo.toml).
+MSRV is 1.86 (enforced in CI and Cargo.toml). If you bump it, also bump `ci.yml` and `hegel-derive/Cargo.toml`.
 
 ## Crate Structure
 
-```
-hegel-rust/
-├── src/
-│   ├── lib.rs          # Public API: hegel(), Hegel builder, assume(), note()
-│   ├── protocol.rs     # Binary protocol: packet encoding/decoding, channel multiplexing
-│   ├── cbor_helpers.rs # Macros and helpers for ciborium::Value (cbor_map!, cbor_array!, map_get, etc.)
-│   ├── runner.rs       # Spawns hegel CLI, manages socket server
-│   └── generators/            # Generator implementations
-│       ├── mod.rs      # Generate trait, socket communication, thread-local state
-│       ├── primitives.rs   # unit(), booleans(), just()
-│       ├── numeric.rs      # integers(), floats() with bounds
-│       ├── strings.rs      # text(), from_regex()
-│       ├── formats.rs      # emails(), urls(), dates(), ip_addresses(), etc.
-│       ├── collections.rs  # vecs(), hashsets(), hashmaps()
-│       ├── tuples.rs       # tuples(), tuples3()
-│       ├── combinators.rs  # one_of!(), optional(), sampled_from(), BoxedGenerator
-│       ├── fixed_dict.rs   # fixed_dicts() for JSON objects
-│       ├── default.rs      # DefaultGenerator trait implementations
-│       ├── macros.rs       # one_of!(), derive_generator!() macros
-│       ├── binary.rs       # binary() for Vec<u8> generation
-│       ├── random.rs       # randoms() for RNG generation (requires "rand" feature)
-│       ├── value.rs        # HegelValue wrapper for NaN/Infinity handling
-│       └── compose.rs      # ComposedGenerator, compose!() macro
-├── hegel-derive/       # Proc macro crate for #[derive(Generate)]
-│   └── src/lib.rs      # Derives generators for structs and enums
-└── build.rs            # Auto-installs hegel CLI via uv if not on PATH
-```
+- `src/lib.rs` — Public API: `hegel()`, `Hegel` builder, `draw()`, `assume()`, `note()`
+- `src/protocol.rs` — Binary protocol: packet encoding/decoding, channel multiplexing
+- `src/cbor_helpers.rs` — Macros and helpers for `ciborium::Value` (`cbor_map!`, `cbor_array!`, `map_get`, etc.)
+- `src/runner.rs` — Spawns hegel CLI, manages socket server
+- `src/generators/` — All generator implementations (`mod.rs` has the `Generate` trait + `TestCaseData`)
+- `hegel-derive/` — Proc macro crate for `#[derive(Generate)]` (sub-crate with its own `Cargo.toml`)
+- `build.rs` — Locates `hegel` binary on PATH, exports `HEGEL_BINARY_PATH` env var (falls back to `"hegel"`)
 
-## Feature Flags
+### Feature Flags
 
 - **`rand`**: Enables `generators::randoms()` for generating `rand::RngCore` implementations
 
@@ -59,48 +39,56 @@ hegel-rust/
 
 ### How It Works
 
-The SDK creates a socket path and spawns the `hegel` CLI as a subprocess. Hegeld binds to the socket and listens for connections. The SDK then connects as a client, and a single persistent connection is maintained for the program run. Multiple tests can be executed over this connection. The build script (`build.rs`) automatically installs Python and hegel into cargo's `OUT_DIR/hegel` via uv if not found on PATH.
+The SDK creates a Unix socket path and spawns the `hegel` CLI as a subprocess. The server binds to the socket and listens for the SDK to connect as a client. A single persistent connection is maintained for the program run, supporting multiple test executions.
 
 ### Protocol
 
-The protocol uses CBOR encoding over multiplexed channels. For each test:
-1. SDK sends `run_test` request on control channel
-2. Hegeld sends `test_case` events with channel IDs for each test case
-3. SDK runs test function, sending `generate`/`start_span`/`stop_span` requests on the test channel
+CBOR-encoded binary protocol over multiplexed channels. For each test:
+1. SDK sends `run_test` request on control channel (channel 0)
+2. Server sends `test_case` events with channel IDs for each test case
+3. SDK runs the test function, sending `generate`/`start_span`/`stop_span` requests on the test channel
 4. SDK sends `mark_complete` with status (VALID, INVALID, or INTERESTING)
-5. After all test cases, hegeld sends `test_done` with results`
+5. After all test cases, server sends `test_done` with results
+
+### Generate Trait and BasicGenerator
+
+Generators implement `Generate<T>`:
+- `do_draw(&self, data: &TestCaseData) -> T` — Produce a value
+- `as_basic()` — Returns `Option<BasicGenerator<T>>` with a CBOR schema + parse function
+
+When `as_basic()` returns `Some`, generation uses a single socket request with the schema. When `None` (after `map`/`filter` on non-basic generators, or `flat_map`), it falls back to multiple requests wrapped in spans for shrinking.
+
+Key insight: `map()` on a `BasicGenerator` preserves the schema by composing the transform function, rather than losing it. This is the central optimization.
 
 ### Thread-Local State
 
-The SDK uses thread-local storage for:
-- `IS_LAST_RUN`: Whether this is the final replay for counterexample output
-- `CONNECTION`: The active socket connection with span depth tracking
-
-### Generation Protocol
-
-Generators implement the `Generate<T>` trait:
-- `schema()`: Returns a CBOR schema (as `ciborium::Value`) describing generated values (enables single-request composition)
-- `generate()`: Produces a value, either via schema or compositional fallback
-
-When `schema()` returns `Some`, the SDK sends one request. When `None` (after `map`/`filter`), it falls back to multiple requests with span grouping for shrinking.
+`TestCaseData` is stored in thread-local `TEST_CASE_DATA` and holds the socket connection, channel, and span depth. `IS_LAST_RUN` tracks whether this is the final replay for counterexample output.
 
 ### Span System
 
-Spans (`start_span`/`stop_span`) group related generation calls, helping Hypothesis understand data structure for effective shrinking. Labels in `generators::labels` identify span types (LIST, TUPLE, ONE_OF, etc.).
+Spans (`start_span`/`stop_span`) group related generation calls so Hypothesis can shrink effectively. Labels in `generators::labels` identify span types (LIST, TUPLE, ONE_OF, FILTER, etc.).
+
+### Collections
+
+Server-managed collections use `new_collection`/`collection_more`/`collection_reject` protocol commands. The `Collection` struct in `collections.rs` handles dynamic sizing via the `more()` protocol with lazy initialization.
 
 ## Key Patterns
 
 ### Adding a New Generator
 
 1. Create a builder struct with configuration fields
-2. Implement `Generate<T>` with `schema()` and `generate()`
+2. Implement `Generate<T>` with `do_draw()` and optionally `as_basic()`
 3. Export a factory function from `generators/mod.rs`
-4. If the generated type should work with `#[derive(Generate)]`, implement `DefaultGenerator`
+4. If the generated type should work with `#[derive(Generate)]`, implement `DefaultGenerator` in `generators/default.rs`
 
 ### Derive Macro
 
-`#[derive(Generate)]` creates a `<Type>Generator` struct with:
+`#[derive(Generate)]` (in `hegel-derive/`) creates a `<Type>Generator` struct with:
 - `new()`: Uses `DefaultGenerator` for all fields
 - `with_<field>(gen)`: Builder methods to customize field generators
 
-For enums, it also creates `<Enum><Variant>Generator` for each data variant.
+For enums, it also creates `<Enum><Variant>Generator` for each data variant. Implementation is split across `struct_gen.rs`, `enum_gen.rs`, and `utils.rs`.
+
+### Conformance Tests
+
+Located in `tests/conformance/`. Rust test binaries in `tests/conformance/rust/src/bin/` are invoked by a Python test runner (`tests/conformance/test_conformance.py`) that validates generators produce values matching their declared constraints.
