@@ -205,7 +205,7 @@ where
 /// # Example
 ///
 /// ```no_run
-/// use hegel::{Hegel, Verbosity, gen};
+/// use hegel::{Hegel, Verbosity, generators};
 ///
 /// Hegel::new(|| {
 ///     let n = hegel::draw(&generators::integers::<i32>());

@@ -3,7 +3,7 @@
 //! # Quick Start
 //!
 //! ```no_run
-//! use hegel::generatorseratorserators;
+//! use hegel::generators;
 //!
 //! #[test]
 //! fn test_addition_commutative() {
@@ -21,7 +21,7 @@
 //!
 //! ```no_run
 //! use hegel::{Hegel, Verbosity};
-//! use hegel::generatorserators;
+//! use hegel::generators;
 //!
 //! #[test]
 //! fn test_with_options() {
@@ -43,7 +43,7 @@
 //! ## Primitives
 //!
 //! ```no_run
-//! use hegel::generatorserators;
+//! use hegel::generators;
 //!
 //! # hegel::hegel(|| {
 //! let _: () = hegel::draw(&generators::unit());
@@ -55,7 +55,7 @@
 //! ## Numbers
 //!
 //! ```no_run
-//! use hegel::generatorserators;
+//! use hegel::generators;
 //!
 //! # hegel::hegel(|| {
 //! // Integers - bounds default to type limits
@@ -75,7 +75,7 @@
 //! ## Strings
 //!
 //! ```no_run
-//! use hegel::generatorserators;
+//! use hegel::generators;
 //!
 //! # hegel::hegel(|| {
 //! let s: String = hegel::draw(&generators::text());
@@ -95,7 +95,7 @@
 //! ## Collections
 //!
 //! ```no_run
-//! use hegel::generatorserators;
+//! use hegel::generators;
 //! use std::collections::{HashSet, HashMap};
 //!
 //! # hegel::hegel(|| {
@@ -108,7 +108,7 @@
 //! ## Combinators
 //!
 //! ```no_run
-//! use hegel::generatorserators;
+//! use hegel::generators;
 //!
 //! # hegel::hegel(|| {
 //! // Sample from a fixed set
@@ -128,7 +128,7 @@
 //! ## Transformations
 //!
 //! ```no_run
-//! use hegel::generatorserators::{self, Generate};
+//! use hegel::generators::{self, Generate};
 //!
 //! # hegel::hegel(|| {
 //! // Transform values
@@ -156,7 +156,7 @@
 //!
 //! ```no_run
 //! use hegel::Generate;
-//! use hegel::generatorserators;
+//! use hegel::generators;
 //!
 //! #[derive(Generate, Debug)]
 //! struct Person {
@@ -178,7 +178,7 @@
 //!
 //! ```ignore
 //! use hegel::derive_generator;
-//! use hegel::generatorserators;
+//! use hegel::generators;
 //!
 //! derive_generator!(Point { x: f64, y: f64 });
 //!
@@ -190,7 +190,7 @@
 //! Use [`assume`] to reject invalid test inputs:
 //!
 //! ```no_run
-//! use hegel::generatorserators;
+//! use hegel::generators;
 //!
 //! # hegel::hegel(|| {
 //! let age: u32 = hegel::draw(&generators::integers());
