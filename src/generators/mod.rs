@@ -265,7 +265,11 @@ thread_local! {
 pub fn test_case_data() -> &'static TestCaseData {
     TEST_CASE_DATA.with(|c| {
         let ptr = c.get();
-        assert!(!ptr.is_null(), "no active test case");
+        assert!(
+            !ptr.is_null(),
+            "draw() cannot be called outside of a Hegel test. \
+            Use either #[hegel::test] or hegel::hegel() to define a Hegel test."
+        );
         unsafe { &*ptr }
     })
 }

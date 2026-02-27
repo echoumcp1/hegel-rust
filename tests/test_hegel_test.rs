@@ -6,13 +6,19 @@ use hegel::generators;
 #[hegel::test]
 #[test]
 fn test_basic_usage() {
-    let _: i32 = hegel::draw(&generators::integers());
+    let _: bool = hegel::draw(&generators::booleans());
 }
 
 #[hegel::test(test_cases = 10)]
 #[test]
 fn test_with_settings() {
     let _: bool = hegel::draw(&generators::booleans());
+}
+
+#[test]
+#[should_panic(expected = "draw() cannot be called outside of a Hegel test")]
+fn test_draw_outside_test_panics() {
+    hegel::draw(&generators::booleans());
 }
 
 #[test]

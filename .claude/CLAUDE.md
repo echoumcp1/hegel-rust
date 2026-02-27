@@ -89,6 +89,11 @@ Server-managed collections use `new_collection`/`collection_more`/`collection_re
 
 For enums, it also creates `<Enum><Variant>Generator` for each data variant. Implementation is split across `struct_gen.rs`, `enum_gen.rs`, and `utils.rs`.
 
+### Testing Conventions
+
+- Place tests in `tests/` as integration tests, not as inline `#[cfg(test)] mod tests` in source files.
+- When a test needs a throwaway generator, prefer `generators::booleans()` as the simplest option (unless the test needs a larger value space).
+
 ### Conformance Tests
 
 Located in `tests/conformance/`. Rust test binaries in `tests/conformance/rust/src/bin/` are invoked by a Python test runner (`tests/conformance/test_conformance.py`) that validates generators produce values matching their declared constraints.
