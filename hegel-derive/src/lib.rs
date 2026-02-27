@@ -1,5 +1,5 @@
 mod enum_gen;
-mod given;
+mod hegel_test;
 mod struct_gen;
 mod utils;
 
@@ -71,37 +71,29 @@ pub fn derive_generate(input: TokenStream) -> TokenStream {
     }
 }
 
-/// Declare generators for test function parameters.
+/// Mark a test function as a Hegel property-based test.
 ///
-/// Generators are matched to parameters by position:
+/// Wraps the function body in `Hegel::new(|| { ... }).run()`. Use `hegel::draw()`
+/// inside the body to generate values.
 ///
-/// ```ignore
-/// #[hegel::given(generators::integers(), generators::text())]
-/// #[test]
-/// fn test_foo(x: i32, name: String) { ... }
-///
-/// // _ — use the type's DefaultGenerator
-/// #[hegel::given(_, _)]
-/// #[test]
-/// fn test_foo(x: i32, name: String) { ... }
-/// ```
-#[proc_macro_attribute]
-pub fn given(attr: TokenStream, item: TokenStream) -> TokenStream {
-    given::expand_given(attr.into(), item.into()).into()
-}
-
-/// Configure settings for a `#[given]` test.
-///
-/// Must be used together with `#[given]`. Order of `#[given]` and `#[settings]`
-/// does not matter.
+/// Optionally accepts settings as `key = value` pairs:
 ///
 /// ```ignore
-/// #[hegel::given(generators::integers())]
-/// #[hegel::settings(test_cases = 500)]
+/// #[hegel::test]
 /// #[test]
-/// fn test_foo(x: i32) { ... }
+/// fn my_test() {
+///     let x: i32 = hegel::draw(&generators::integers());
+///     assert!(x + 0 == x);
+/// }
+///
+/// #[hegel::test(test_cases = 500)]
+/// #[test]
+/// fn my_configured_test() {
+///     let x: i32 = hegel::draw(&generators::integers());
+///     assert!(x + 0 == x);
+/// }
 /// ```
 #[proc_macro_attribute]
-pub fn settings(attr: TokenStream, item: TokenStream) -> TokenStream {
-    given::expand_settings(attr.into(), item.into()).into()
+pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
+    hegel_test::expand_test(attr.into(), item.into()).into()
 }

@@ -220,7 +220,6 @@ pub struct Hegel<F> {
     test_cases: u64,
     verbosity: Verbosity,
     seed: Option<u64>,
-    test_name: Option<String>,
 }
 
 impl<F> Hegel<F>
@@ -234,7 +233,6 @@ where
             test_cases: 100,
             verbosity: Verbosity::Normal,
             seed: None,
-            test_name: None,
         }
     }
 
@@ -252,12 +250,6 @@ where
 
     pub fn seed(mut self, seed: Option<u64>) -> Self {
         self.seed = seed;
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __test_name(mut self, name: &str) -> Self {
-        self.test_name = Some(name.to_string());
         self
     }
 
@@ -374,7 +366,6 @@ where
         // Run the test
         let mut test_fn = self.test_fn;
         let verbosity = self.verbosity;
-        let test_name = self.test_name;
         let got_interesting = Arc::new(AtomicBool::new(false));
 
         // Create a test channel for receiving test_case/test_done events
@@ -438,7 +429,6 @@ where
                         false,
                         verbosity,
                         &got_interesting,
-                        test_name.clone(),
                     );
                 }
                 Some("test_done") => {
@@ -495,7 +485,6 @@ where
                 true,
                 verbosity,
                 &got_interesting,
-                test_name.clone(),
             );
         }
 
@@ -526,18 +515,11 @@ fn run_test_case<F: FnMut()>(
     is_final: bool,
     verbosity: Verbosity,
     got_interesting: &Arc<AtomicBool>,
-    test_name: Option<String>,
 ) {
     // Create TestCaseData on the stack and set thread-local pointer.
     // Note: we pass the channel directly (not cloned) so generators and mark_complete
     // share the same message ID sequence.
-    let data = TestCaseData::new(
-        Arc::clone(connection),
-        test_channel,
-        verbosity,
-        is_final,
-        test_name,
-    );
+    let data = TestCaseData::new(Arc::clone(connection), test_channel, verbosity, is_final);
     TEST_CASE_DATA.with(|c| c.set(&data as *const TestCaseData));
 
     // Run test in catch_unwind
@@ -570,13 +552,6 @@ fn run_test_case<F: FnMut()>(
                         thread_name, thread_id, location
                     );
                     eprintln!("{}", msg);
-
-                    let given = data.given_params.borrow();
-                    if !given.is_empty() {
-                        let name = data.test_name.as_deref().unwrap_or("test");
-                        eprintln!("{}({})", name, given.join(", "));
-                    }
-                    drop(given);
 
                     for value in std::mem::take(&mut *data.output.borrow_mut()) {
                         eprintln!("{}", value);
