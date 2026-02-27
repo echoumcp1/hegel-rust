@@ -90,7 +90,7 @@ def check(base_ref: str) -> None:
         border = " ".join("*" * ((width + 1) // 2))
         empty = "*" + " " * (width - 2) + "*"
         inner = "\n".join("*" + l.center(width - 2) + "*" for l in lines)
-        pad = "\t\t"
+        pad = "\t"
         box = f"\n{pad}{border}\n{pad}{empty}\n{pad}{empty}\n"
         box += "\n".join(f"{pad}" + l for l in inner.split("\n"))
         box += f"\n{pad}{empty}\n{pad}{empty}\n{pad}{border}\n"
