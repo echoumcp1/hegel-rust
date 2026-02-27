@@ -1,6 +1,6 @@
 mod common;
 
-use common::utils::{find_any, assert_all_examples};
+use common::utils::{assert_all_examples, find_any};
 use hegel::generators::{self, Generate};
 
 // tuples2
@@ -8,8 +8,10 @@ use hegel::generators::{self, Generate};
 #[test]
 fn test_tuple2_basic() {
     hegel::hegel(|| {
-        let (a, b): (i32, bool) =
-            hegel::draw(&generators::tuples2(generators::integers(), generators::booleans()));
+        let (a, b): (i32, bool) = hegel::draw(&generators::tuples2(
+            generators::integers(),
+            generators::booleans(),
+        ));
         let _ = (a, b);
     });
 }
@@ -278,8 +280,6 @@ fn test_tuple3_all_examples_in_bounds() {
             generators::integers::<i32>().with_min(10).with_max(20),
             generators::integers::<i32>().with_min(100).with_max(200),
         ),
-        |(a, b, c)| {
-            (-5..=5).contains(a) && (10..=20).contains(b) && (100..=200).contains(c)
-        },
+        |(a, b, c)| (-5..=5).contains(a) && (10..=20).contains(b) && (100..=200).contains(c),
     );
 }
