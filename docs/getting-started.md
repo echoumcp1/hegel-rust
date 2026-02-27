@@ -251,7 +251,7 @@ let m: HashMap<String, i32> = generators::hashmaps(
 use hegel::generators::{self, Generate};
 
 # hegel::hegel(|| {
-let pair: (i32, String) = generators::tuples(
+let pair: (i32, String) = generators::tuples2(
     generators::integers(), generators::text(),
 ).generate();
 let triple: (bool, i32, f64) = generators::tuples3(

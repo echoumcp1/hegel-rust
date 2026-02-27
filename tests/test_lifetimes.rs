@@ -31,7 +31,7 @@ fn test_tuple_of_references() {
         let ys = ["a", "b", "c"];
         let x_refs: Vec<&i32> = xs.iter().collect();
         let y_refs: Vec<&&str> = ys.iter().collect();
-        let (x, y): (&i32, &&str) = hegel::draw(&generators::tuples(
+        let (x, y): (&i32, &&str) = hegel::draw(&generators::tuples2(
             generators::sampled_from(x_refs),
             generators::sampled_from(y_refs),
         ));
@@ -122,10 +122,11 @@ fn test_nested_optional_tuple_of_references() {
         let ages = [25u32, 30, 35];
         let name_refs: Vec<&&str> = names.iter().collect();
         let age_refs: Vec<&u32> = ages.iter().collect();
-        let result: Option<(&&str, &u32)> = hegel::draw(&generators::optional(generators::tuples(
-            generators::sampled_from(name_refs),
-            generators::sampled_from(age_refs),
-        )));
+        let result: Option<(&&str, &u32)> =
+            hegel::draw(&generators::optional(generators::tuples2(
+                generators::sampled_from(name_refs),
+                generators::sampled_from(age_refs),
+            )));
         if let Some((name, age)) = result {
             assert!(names.contains(name));
             assert!(ages.contains(age));
@@ -141,7 +142,7 @@ fn test_vec_of_tuples_of_references() {
         let kr: Vec<&i32> = keys.iter().collect();
         let vr: Vec<&&str> = vals.iter().collect();
         let result: Vec<(&i32, &&str)> = hegel::draw(
-            &generators::vecs(generators::tuples(
+            &generators::vecs(generators::tuples2(
                 generators::sampled_from(kr),
                 generators::sampled_from(vr),
             ))
@@ -191,7 +192,7 @@ fn test_deeply_nested_reference_composition() {
 
         let result: Vec<i32> = hegel::draw(
             &generators::vecs(
-                generators::optional(generators::tuples(
+                generators::optional(generators::tuples2(
                     generators::sampled_from(xr),
                     generators::sampled_from(yr),
                 ))

@@ -1,6 +1,7 @@
 use super::{
-    booleans, floats, hashmaps, integers, optional, text, vecs, BoolGenerator, FloatGenerator,
-    HashMapGenerator, IntegerGenerator, OptionalGenerator, TextGenerator, VecGenerator,
+    arrays::ArrayGenerator, booleans, floats, hashmaps, integers, optional, text, vecs,
+    BoolGenerator, FloatGenerator, HashMapGenerator, IntegerGenerator, OptionalGenerator,
+    TextGenerator, VecGenerator,
 };
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -154,6 +155,16 @@ where
     type Generator = VecGenerator<T::Generator, T>;
     fn default_generator() -> Self::Generator {
         vecs(T::default_generator())
+    }
+}
+
+impl<T: DefaultGenerator, const N: usize> DefaultGenerator for [T; N]
+where
+    T::Generator: Send + Sync,
+{
+    type Generator = ArrayGenerator<T::Generator, T, N>;
+    fn default_generator() -> Self::Generator {
+        ArrayGenerator::new(T::default_generator())
     }
 }
 

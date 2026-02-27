@@ -1,3 +1,4 @@
+mod arrays;
 mod binary;
 mod collections;
 mod combinators;
@@ -16,6 +17,7 @@ mod value;
 
 // public api
 pub use self::basic::BasicGenerator;
+pub use arrays::arrays;
 pub use binary::binary;
 pub use collections::{hashmaps, hashsets, vecs, HashMapGenerator};
 pub use combinators::{one_of, optional, sampled_from, BoxedGenerator};
@@ -29,7 +31,10 @@ pub use primitives::{booleans, just, unit};
 #[cfg_attr(docsrs, doc(cfg(feature = "rand")))]
 pub use random::{randoms, HegelRandom, RandomsGenerator};
 pub use strings::{from_regex, text};
-pub use tuples::{tuples, tuples3};
+pub use tuples::{
+    tuples10, tuples11, tuples12, tuples2, tuples3, tuples4, tuples5, tuples6, tuples7, tuples8,
+    tuples9,
+};
 
 pub(crate) use collections::VecGenerator;
 pub(crate) use combinators::{Filtered, FlatMapped, Mapped, OptionalGenerator};
