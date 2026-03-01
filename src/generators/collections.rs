@@ -1,4 +1,4 @@
-use super::{integers, labels, BasicGenerator, Collection, Generate, TestCaseData, BoxedGenerator};
+use super::{integers, labels, BasicGenerator, BoxedGenerator, Collection, Generate, TestCaseData};
 use crate::cbor_utils::{cbor_map, map_insert};
 use ciborium::Value;
 use std::collections::{HashMap, HashSet};
@@ -299,7 +299,6 @@ pub fn hashmaps<KT, VT, K: Generate<KT>, V: Generate<VT>>(
     }
 }
 
-
 pub(crate) struct MappedToValue<T, G> {
     inner: G,
     _phantom: PhantomData<fn() -> T>,
@@ -416,8 +415,6 @@ impl Generate<Value> for FixedDictGenerator<'_> {
 pub fn fixed_dicts<'a>() -> FixedDictBuilder<'a> {
     FixedDictBuilder { fields: Vec::new() }
 }
-
-
 
 pub struct ArrayGenerator<G, T, const N: usize> {
     element: G,
