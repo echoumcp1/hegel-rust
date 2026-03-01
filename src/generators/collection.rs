@@ -36,7 +36,12 @@ impl<'a> Collection<'a> {
     /// The server-side `many` object is not created until the first call
     /// to [`more()`](Collection::more), matching the Python SDK's lazy
     /// initialization behavior.
-    pub fn new(data: &'a TestCaseData, name: &str, min_size: usize, max_size: Option<usize>) -> Self {
+    pub fn new(
+        data: &'a TestCaseData,
+        name: &str,
+        min_size: usize,
+        max_size: Option<usize>,
+    ) -> Self {
         Collection {
             data,
             base_name: name.to_string(),

@@ -16,21 +16,21 @@ mod tuples;
 mod value;
 
 // public api
+pub use arrays::arrays;
 pub use basic::BasicGenerator;
 pub use collection::Collection;
-pub use arrays::arrays;
-pub use strings::binary;
 pub use collections::{hashmaps, hashsets, vecs, HashMapGenerator};
 pub use combinators::{one_of, optional, sampled_from, BoxedGenerator};
 pub use compose::{fnv1a_hash, ComposedGenerator};
-pub use from_type::{from_type, DefaultGenerator};
 pub use fixed_dict::fixed_dicts;
 pub use formats::{dates, datetimes, domains, emails, ip_addresses, times, urls};
+pub use from_type::{from_type, DefaultGenerator};
 pub use numeric::{floats, integers};
 pub use primitives::{booleans, just, unit};
 #[cfg(feature = "rand")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rand")))]
 pub use random::{randoms, HegelRandom, RandomsGenerator};
+pub use strings::binary;
 pub use strings::{from_regex, text};
 pub use tuples::{
     tuples10, tuples11, tuples12, tuples2, tuples3, tuples4, tuples5, tuples6, tuples7, tuples8,
@@ -161,7 +161,11 @@ impl TestCaseData {
 
     /// Send a request and receive a response via the channel.
     /// Returns Err(StopTestError) if the server sends an overflow error.
-    pub(super) fn send_request(&self, command: &str, payload: &Value) -> Result<Value, StopTestError> {
+    pub(super) fn send_request(
+        &self,
+        command: &str,
+        payload: &Value,
+    ) -> Result<Value, StopTestError> {
         let debug = *PROTOCOL_DEBUG || self.verbosity() == Verbosity::Debug;
 
         // Build the request message by merging command into the payload map

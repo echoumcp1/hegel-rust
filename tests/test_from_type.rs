@@ -40,7 +40,6 @@ fn test_from_type_option() {
     check_can_generate_examples(from_type::<Option<String>>());
 }
 
-
 #[test]
 fn test_from_type_vec() {
     check_can_generate_examples(from_type::<Vec<i32>>());
