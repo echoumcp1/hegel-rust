@@ -101,16 +101,16 @@ def check(base_ref: str) -> None:
 
 
 def pin_hegel_version(runner_rs: Path) -> None:
-    """Pin HEGEL_VERSION to the current HEAD of hegel-core main."""
-    sha = subprocess.check_output(
-        ["gh", "api", "repos/antithesishq/hegel-core/commits/main", "--jq", ".sha"],
+    """Pin HEGEL_VERSION to the latest hegel-core release tag."""
+    tag = subprocess.check_output(
+        ["gh", "api", "repos/antithesishq/hegel-core/releases/latest", "--jq", ".tag_name"],
         text=True,
     ).strip()
 
     text = runner_rs.read_text()
     new_text = re.sub(
         r'^const HEGEL_VERSION: &str = ".*"',
-        f'const HEGEL_VERSION: &str = "{sha}"',
+        f'const HEGEL_VERSION: &str = "{tag}"',
         text,
         count=1,
         flags=re.MULTILINE,

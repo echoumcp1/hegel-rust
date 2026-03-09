@@ -147,8 +147,8 @@ fn init_panic_hook() {
     });
 }
 
-/// The hegel-core commit this SDK is designed to work with.
-const HEGEL_VERSION: &str = "6e327df2dd42553de12ace94cfbddfbbd9e4bf50";
+/// The hegel-core release tag this SDK is designed to work with.
+const HEGEL_VERSION: &str = "v0.3.3";
 
 const HEGEL_CMD_ENV: &str = "HEGEL_CMD";
 const HEGEL_DIR: &str = ".hegel";
@@ -171,10 +171,7 @@ fn ensure_hegel_installed() -> Result<String, String> {
 
     std::fs::create_dir_all(HEGEL_DIR).map_err(|e| format!("Failed to create .hegel: {e}"))?;
 
-    eprintln!(
-        "Installing hegel ({}) into {venv_dir}...",
-        &HEGEL_VERSION[..12]
-    );
+    eprintln!("Installing hegel ({HEGEL_VERSION}) into {venv_dir}...");
 
     let status = std::process::Command::new("uv")
         .args(["venv", "--clear", &venv_dir])
