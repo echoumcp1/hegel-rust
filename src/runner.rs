@@ -539,8 +539,6 @@ fn run_test_case<F: FnMut()>(
         }
     };
 
-    assert!(data.span_depth.get() == 0);
-
     // Send mark_complete using the same channel that generators used.
     // Skip if test was aborted (StopTest) - server already closed the channel.
     if !data.test_aborted.get() {
