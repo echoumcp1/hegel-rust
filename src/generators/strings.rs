@@ -25,7 +25,7 @@ impl TextGenerator {
         };
 
         if let Some(max) = self.max_size {
-            map_insert(&mut schema, "max_size", Value::from(max as u64));
+            map_insert(&mut schema, "max_size", max as u64);
         }
 
         schema
@@ -117,7 +117,7 @@ impl BinaryGenerator {
         };
 
         if let Some(max) = self.max_size {
-            map_insert(&mut schema, "max_size", Value::from(max as u64));
+            map_insert(&mut schema, "max_size", max as u64);
         }
 
         schema
@@ -127,10 +127,7 @@ impl BinaryGenerator {
 fn parse_binary(raw: Value) -> Vec<u8> {
     match raw {
         Value::Bytes(bytes) => bytes,
-        _ => panic!(
-            "Expected CBOR byte string from binary schema, got {:?}",
-            raw
-        ),
+        _ => panic!("expected Value::Bytes, got {:?}", raw),
     }
 }
 
@@ -144,7 +141,7 @@ impl Generate<Vec<u8>> for BinaryGenerator {
     }
 }
 
-/// Generate binary data (byte sequences).
+/// Generate binary data.
 ///
 /// # Example
 ///

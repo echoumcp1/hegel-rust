@@ -62,7 +62,7 @@ where
         };
 
         if let Some(max) = self.max_size {
-            map_insert(&mut schema, "max_size", Value::from(max as u64));
+            map_insert(&mut schema, "max_size", max as u64);
         }
 
         Some(BasicGenerator::new(schema, move |raw| {
@@ -143,7 +143,7 @@ where
         };
 
         if let Some(max) = self.max_size {
-            map_insert(&mut schema, "max_size", Value::from(max as u64));
+            map_insert(&mut schema, "max_size", max as u64);
         }
 
         Some(BasicGenerator::new(schema, move |raw| {
@@ -229,7 +229,7 @@ where
         };
 
         if let Some(max) = self.max_size {
-            map_insert(&mut schema, "max_size", Value::from(max as u64));
+            map_insert(&mut schema, "max_size", max as u64);
         }
 
         Some(BasicGenerator::new(schema, move |raw| {

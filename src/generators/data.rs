@@ -247,7 +247,7 @@ impl<'a> Collection<'a> {
                 "min_size" => self.min_size as u64
             };
             if let Some(max) = self.max_size {
-                map_insert(&mut payload, "max_size", Value::from(max as u64));
+                map_insert(&mut payload, "max_size", max as u64);
             }
             let response = match self.data.send_request("new_collection", &payload) {
                 Ok(v) => v,
@@ -307,7 +307,7 @@ impl<'a> Collection<'a> {
             "collection" => server_name.as_str()
         };
         if let Some(reason) = why {
-            map_insert(&mut payload, "why", Value::Text(reason.to_string()));
+            map_insert(&mut payload, "why", reason.to_string());
         }
         let _ = self.data.send_request("collection_reject", &payload);
     }
