@@ -26,7 +26,7 @@ fn main() {
         std::process::exit(1);
     });
 
-    Hegel::new(move || {
+    Hegel::new(move |_tc| {
         let value = hegel::draw(&generators::sampled_from(params.options.clone()));
         write(&Metrics { value });
     })

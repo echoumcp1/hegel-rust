@@ -88,8 +88,8 @@ impl RngCore for HegelRandom {
 /// use rand::prelude::{IndexedRandom, SliceRandom};
 ///
 /// #[hegel::test]
-/// fn my_test() {
-///     let mut rng = hegel::draw(&randoms());
+/// fn my_test(tc: hegel::TestCase) {
+///     let mut rng = tc.draw(&randoms());
 ///
 ///     let a: i32 = rng.random_range(1..=100);
 ///     let b: bool = rng.random();

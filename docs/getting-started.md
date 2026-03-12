@@ -17,16 +17,17 @@ The SDK requires [`uv`](https://github.com/astral-sh/uv) installed and on your P
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn test_integers() {
-    let n = hegel::draw(&generators::integers::<i64>());
+fn test_integers(tc: hegel::TestCase) {
+    let n = tc.draw(&generators::integers::<i64>());
     println!("called with {n}");
     assert_eq!(n, n); // integers are always equal to themselves
 }
 ```
 
 `#[hegel::test]` runs your test many times with different generated inputs.
-Inside the body, call `hegel::draw(&generator)` to produce a value. If any
-assertion fails, Hegel shrinks the inputs to a minimal counterexample.
+The function takes a `hegel::TestCase` parameter, which provides methods for
+drawing values and making assumptions. If any assertion fails, Hegel shrinks
+the inputs to a minimal counterexample.
 
 By default Hegel runs **100 test cases**. Use the builder API to override this:
 
@@ -34,8 +35,8 @@ By default Hegel runs **100 test cases**. Use the builder API to override this:
 use hegel::generators::{self, Generate};
 
 #[hegel::test(test_cases = 500)]
-fn test_integers_many() {
-    let n = hegel::draw(&generators::integers::<i64>());
+fn test_integers_many(tc: hegel::TestCase) {
+    let n = tc.draw(&generators::integers::<i64>());
     assert_eq!(n, n);
 }
 ```
@@ -48,8 +49,8 @@ Hegel tests use `#[hegel::test]` in place of `#[test]`:
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn test_bounded_integers() {
-    let n = hegel::draw(&generators::integers::<i32>()
+fn test_bounded_integers(tc: hegel::TestCase) {
+    let n = tc.draw(&generators::integers::<i32>()
         .with_min(0).with_max(200));
     assert!(n < 50); // this will fail!
 }
@@ -60,15 +61,15 @@ When the test fails, Hegel finds the smallest counterexample — in this case,
 
 ## Generating multiple values
 
-Call `hegel::draw()` multiple times to produce multiple values in a single test:
+Call `tc.draw()` multiple times to produce multiple values in a single test:
 
 ```rust
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn test_multiple_values() {
-    let n = hegel::draw(&generators::integers::<i64>());
-    let s = hegel::draw(&generators::text());
+fn test_multiple_values(tc: hegel::TestCase) {
+    let n = tc.draw(&generators::integers::<i64>());
+    let s = tc.draw(&generators::text());
     assert_eq!(n, n);
     assert!(s.len() >= 0);
 }
@@ -85,24 +86,24 @@ Use `.filter()` for simple conditions on a generator:
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn test_even_integers() {
-    let n = hegel::draw(&generators::integers::<i64>()
+fn test_even_integers(tc: hegel::TestCase) {
+    let n = tc.draw(&generators::integers::<i64>()
         .filter(|x| x % 2 == 0));
     assert!(n % 2 == 0);
 }
 ```
 
-When the constraint spans multiple values, use `hegel::assume` inside the
+When the constraint spans multiple values, use `tc.assume()` inside the
 test body:
 
 ```rust
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn test_division() {
-    let n1 = hegel::draw(&generators::integers::<i64>());
-    let n2 = hegel::draw(&generators::integers::<i64>());
-    hegel::assume(n2 != 0);
+fn test_division(tc: hegel::TestCase) {
+    let n1 = tc.draw(&generators::integers::<i64>());
+    let n2 = tc.draw(&generators::integers::<i64>());
+    tc.assume(n2 != 0);
     // n2 is guaranteed non-zero here
     let q = n1 / n2;
     let r = n1 % n2;
@@ -110,7 +111,7 @@ fn test_division() {
 }
 ```
 
-Using bounds and `.map()` is more efficient than `.filter()` or `hegel::assume()`
+Using bounds and `.map()` is more efficient than `.filter()` or `tc.assume()`
 because they avoid generating values that will be rejected.
 
 ## Transforming generated values
@@ -121,8 +122,8 @@ Use `.map()` to transform values after generation:
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn test_string_integers() {
-    let s = hegel::draw(&generators::integers::<i32>()
+fn test_string_integers(tc: hegel::TestCase) {
+    let s = tc.draw(&generators::integers::<i32>()
         .with_min(0).with_max(100)
         .map(|n| n.to_string()));
     assert!(s.parse::<i32>().unwrap() >= 0);
@@ -138,12 +139,12 @@ configure later generators directly:
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn test_list_with_valid_index() {
-    let n = hegel::draw(&generators::integers::<usize>()
+fn test_list_with_valid_index(tc: hegel::TestCase) {
+    let n = tc.draw(&generators::integers::<usize>()
         .with_min(1).with_max(10));
-    let lst: Vec<i32> = hegel::draw(&generators::vecs(generators::integers())
+    let lst: Vec<i32> = tc.draw(&generators::vecs(generators::integers())
         .with_min_size(n).with_max_size(n));
-    let index = hegel::draw(&generators::integers::<usize>()
+    let index = tc.draw(&generators::integers::<usize>()
         .with_min(0).with_max(n - 1));
     assert!(index < lst.len());
 }
@@ -156,8 +157,8 @@ generator expression:
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn test_flatmap_example() {
-    let (n, lst) = hegel::draw(&generators::integers::<usize>()
+fn test_flatmap_example(tc: hegel::TestCase) {
+    let (n, lst) = tc.draw(&generators::integers::<usize>()
         .with_min(1).with_max(5)
         .flat_map(|n| {
             generators::vecs(generators::integers::<i32>())
@@ -176,12 +177,12 @@ fn test_flatmap_example() {
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn my_test() {
-    let b: bool = hegel::draw(&generators::booleans());
-    let n: i32 = hegel::draw(&generators::integers::<i32>());    // also i8-i64, u8-u64, usize
-    let f: f64 = hegel::draw(&generators::floats::<f64>());      // also f32
-    let s: String = hegel::draw(&generators::text());
-    let bytes: Vec<u8> = hegel::draw(&generators::binary());
+fn my_test(tc: hegel::TestCase) {
+    let b: bool = tc.draw(&generators::booleans());
+    let n: i32 = tc.draw(&generators::integers::<i32>());    // also i8-i64, u8-u64, usize
+    let f: f64 = tc.draw(&generators::floats::<f64>());      // also f32
+    let s: String = tc.draw(&generators::text());
+    let bytes: Vec<u8> = tc.draw(&generators::binary());
 }
 ```
 
@@ -195,9 +196,9 @@ support `.exclude_min()`, `.exclude_max()`, `.allow_nan(bool)`, and
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn my_test() {
-    let always_42 = hegel::draw(&generators::just(42));
-    let suit = hegel::draw(&generators::sampled_from(vec!["hearts", "diamonds", "clubs", "spades"]));
+fn my_test(tc: hegel::TestCase) {
+    let always_42 = tc.draw(&generators::just(42));
+    let suit = tc.draw(&generators::sampled_from(vec!["hearts", "diamonds", "clubs", "spades"]));
 }
 ```
 
@@ -208,12 +209,12 @@ use hegel::generators::{self, Generate};
 use std::collections::{HashSet, HashMap};
 
 #[hegel::test]
-fn my_test() {
-    let v: Vec<i32> = hegel::draw(&generators::vecs(generators::integers())
+fn my_test(tc: hegel::TestCase) {
+    let v: Vec<i32> = tc.draw(&generators::vecs(generators::integers())
         .with_min_size(1).with_max_size(10));
-    let s: HashSet<i32> = hegel::draw(&generators::hashsets(generators::integers())
+    let s: HashSet<i32> = tc.draw(&generators::hashsets(generators::integers())
         .with_max_size(5));
-    let m: HashMap<String, i32> = hegel::draw(&generators::hashmaps(
+    let m: HashMap<String, i32> = tc.draw(&generators::hashmaps(
         generators::text().with_max_size(10), generators::integers(),
     ).with_max_size(5));
 }
@@ -225,17 +226,17 @@ fn my_test() {
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn my_test() {
-    let pair: (i32, String) = hegel::draw(&generators::tuples2(
+fn my_test(tc: hegel::TestCase) {
+    let pair: (i32, String) = tc.draw(&generators::tuples2(
         generators::integers(), generators::text(),
     ));
-    let triple: (bool, i32, f64) = hegel::draw(&generators::tuples3(
+    let triple: (bool, i32, f64) = tc.draw(&generators::tuples3(
         generators::booleans(), generators::integers(), generators::floats(),
     ));
-    let maybe: Option<i32> = hegel::draw(&generators::optional(generators::integers()));
+    let maybe: Option<i32> = tc.draw(&generators::optional(generators::integers()));
 
     // Choose between generators (type-erased via one_of! macro)
-    let n: i32 = hegel::draw(&hegel::one_of!(
+    let n: i32 = tc.draw(&hegel::one_of!(
         generators::just(0),
         generators::integers::<i32>().with_min(1).with_max(100),
         generators::integers::<i32>().with_min(-100).with_max(-1),
@@ -249,16 +250,16 @@ fn my_test() {
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn my_test() {
-    let email: String = hegel::draw(&generators::emails());
-    let url: String = hegel::draw(&generators::urls());
-    let domain: String = hegel::draw(&generators::domains().with_max_length(50));
-    let date: String = hegel::draw(&generators::dates());     // YYYY-MM-DD
-    let time: String = hegel::draw(&generators::times());      // HH:MM:SS
-    let dt: String = hegel::draw(&generators::datetimes());
-    let ipv4: String = hegel::draw(&generators::ip_addresses().v4());
-    let ipv6: String = hegel::draw(&generators::ip_addresses().v6());
-    let pattern: String = hegel::draw(&generators::from_regex(r"[A-Z]{2}-[0-9]{4}").fullmatch());
+fn my_test(tc: hegel::TestCase) {
+    let email: String = tc.draw(&generators::emails());
+    let url: String = tc.draw(&generators::urls());
+    let domain: String = tc.draw(&generators::domains().with_max_length(50));
+    let date: String = tc.draw(&generators::dates());     // YYYY-MM-DD
+    let time: String = tc.draw(&generators::times());      // HH:MM:SS
+    let dt: String = tc.draw(&generators::datetimes());
+    let ipv4: String = tc.draw(&generators::ip_addresses().v4());
+    let ipv6: String = tc.draw(&generators::ip_addresses().v6());
+    let pattern: String = tc.draw(&generators::from_regex(r"[A-Z]{2}-[0-9]{4}").fullmatch());
 }
 ```
 
@@ -275,8 +276,8 @@ use hegel::generators::{self, Generate as _};
 struct User { name: String, age: u32, active: bool }
 
 #[hegel::test]
-fn test_derived_user() {
-    let user: User = hegel::draw(&UserGenerator::new()
+fn test_derived_user(tc: hegel::TestCase) {
+    let user: User = tc.draw(&UserGenerator::new()
         .with_age(generators::integers().with_min(18).with_max(120))
         .with_name(generators::from_regex(r"[A-Z][a-z]{2,15}").fullmatch()));
     assert!(user.age >= 18 && user.age <= 120);
@@ -291,22 +292,22 @@ use hegel::generators::{self, Generate};
 
 struct Point { x: f64, y: f64 }
 derive_generator!(Point { x: f64, y: f64 });
-// Now hegel::draw(&PointGenerator::new().with_x(...).with_y(...)) works
+// Now tc.draw(&PointGenerator::new().with_x(...).with_y(...)) works
 ```
 
 ## Debugging with note()
 
-Use `hegel::note()` to attach debug information. Notes only appear when Hegel
+Use `tc.note()` to attach debug information. Notes only appear when Hegel
 replays the minimal failing example:
 
 ```rust
 use hegel::generators::{self, Generate};
 
 #[hegel::test]
-fn test_with_notes() {
-    let x = hegel::draw(&generators::integers::<i64>());
-    let y = hegel::draw(&generators::integers::<i64>());
-    hegel::note(&format!("trying x={x}, y={y}"));
+fn test_with_notes(tc: hegel::TestCase) {
+    let x = tc.draw(&generators::integers::<i64>());
+    let y = tc.draw(&generators::integers::<i64>());
+    tc.note(&format!("trying x={x}, y={y}"));
     assert_eq!(x + y, y + x); // commutativity -- always true
 }
 ```

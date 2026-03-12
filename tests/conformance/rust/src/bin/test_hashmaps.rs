@@ -37,7 +37,7 @@ fn main() {
         std::process::exit(1);
     });
 
-    Hegel::new(move || {
+    Hegel::new(move |_tc| {
         let size: usize;
         let min_key: Option<i32>;
         let max_key: Option<i32>;

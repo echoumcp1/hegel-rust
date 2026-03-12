@@ -7,7 +7,7 @@ const FAILING_TEST_CODE: &str = r#"
 use hegel::generators;
 
 fn main() {
-    hegel::hegel(|| {
+    hegel::hegel(|_tc| {
         let x = hegel::draw(&generators::integers::<i32>());
         panic!("intentional failure: {}", x);
     });

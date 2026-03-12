@@ -53,8 +53,8 @@ pub const fn fnv1a_hash(bytes: &[u8]) -> u64 {
 /// use hegel::generators;
 ///
 /// #[hegel::test]
-/// fn my_test() {
-///     let value = hegel::draw(&hegel::compose!(|draw| {
+/// fn my_test(tc: hegel::TestCase) {
+///     let value = tc.draw(&hegel::compose!(|draw| {
 ///         let x = draw(&generators::integers::<i32>().min_value(0).max_value(10));
 ///         let y = draw(&generators::integers::<i32>().min_value(x).max_value(100));
 ///         (x, y)

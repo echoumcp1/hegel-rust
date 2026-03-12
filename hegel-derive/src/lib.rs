@@ -30,10 +30,12 @@ use syn::{parse_macro_input, Data, DeriveInput};
 ///     age: u32,
 /// }
 ///
-/// let gen = generators::from_type::<Person>()
-///     .with_age(generators::integers::<u32>().min_value(0).max_value(120));
-///
-/// let person: Person = hegel::draw(&gen);
+/// #[hegel::test]
+/// fn generates_people(tc: hegel::TestCase) {
+///     let gen = generators::from_type::<Person>()
+///         .with_age(generators::integers::<u32>().min_value(0).max_value(120));
+///     let person: Person = tc.draw(&gen);
+/// }
 /// ```
 ///
 /// # Enum Example
@@ -49,14 +51,16 @@ use syn::{parse_macro_input, Data, DeriveInput};
 ///     Error { code: i32, message: String },
 /// }
 ///
-/// let gen = generators::from_type::<Status>()
-///     .with_Active(
-///         generators::from_type::<Status>()
-///             .default_Active()
-///             .with_since(generators::text().max_size(20))
-///     );
-///
-/// let status: Status = hegel::draw(&gen);
+/// #[hegel::test]
+/// fn generates_statuses(tc: hegel::TestCase) {
+///     let gen = generators::from_type::<Status>()
+///         .with_Active(
+///             generators::from_type::<Status>()
+///                 .default_Active()
+///                 .with_since(generators::text().max_size(20))
+///         );
+///     let status: Status = tc.draw(&gen);
+/// }
 /// ```
 #[proc_macro_derive(Generate)]
 pub fn derive_generate(input: TokenStream) -> TokenStream {
@@ -73,23 +77,23 @@ pub fn derive_generate(input: TokenStream) -> TokenStream {
 
 /// Mark a test function as a Hegel property-based test.
 ///
-/// Wraps the function body in `Hegel::new(|| { ... }).run()`. Use `hegel::draw()`
-/// inside the body to generate values.
+/// Wraps the function body in `Hegel::new(|tc: TestCase| { ... }).run()`. The function
+/// must take exactly one parameter of type `hegel::TestCase`, and use `tc.draw()` to
+/// generate values. The `#[test]` attribute is added automatically and must not be
+/// present on the function.
 ///
 /// Optionally accepts settings as `key = value` pairs:
 ///
 /// ```ignore
 /// #[hegel::test]
-/// #[test]
-/// fn my_test() {
-///     let x: i32 = hegel::draw(&generators::integers());
+/// fn my_test(tc: hegel::TestCase) {
+///     let x: i32 = tc.draw(&generators::integers());
 ///     assert!(x + 0 == x);
 /// }
 ///
 /// #[hegel::test(test_cases = 500)]
-/// #[test]
-/// fn my_configured_test() {
-///     let x: i32 = hegel::draw(&generators::integers());
+/// fn my_configured_test(tc: hegel::TestCase) {
+///     let x: i32 = tc.draw(&generators::integers());
 ///     assert!(x + 0 == x);
 /// }
 /// ```

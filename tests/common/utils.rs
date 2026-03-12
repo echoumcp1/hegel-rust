@@ -60,7 +60,7 @@ where
     }
 
     pub fn run(self) {
-        Hegel::new(move || {
+        Hegel::new(move |_tc| {
             let value = hegel::draw(&self.generator);
             assert!(
                 (self.predicate)(&value),
@@ -164,7 +164,7 @@ where
         let max_attempts = self.max_attempts;
 
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            Hegel::new(move || {
+            Hegel::new(move |_tc| {
                 let value = hegel::draw(&self.generator);
                 if (self.condition)(&value) {
                     *found_clone.lock().unwrap() = Some(value);

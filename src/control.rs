@@ -54,15 +54,17 @@ pub fn currently_in_test_context() -> bool {
 
 /// Assume a condition is true. If false, reject the current test input.
 ///
+/// Prefer using [`TestCase::assume`](crate::TestCase::assume) instead.
+///
 /// # Example
 ///
 /// ```no_run
 /// use hegel::generators;
 ///
 /// #[hegel::test]
-/// fn my_test() {
-///     let age: u32 = hegel::draw(&generators::integers());
-///     hegel::assume(age >= 18);
+/// fn my_test(tc: hegel::TestCase) {
+///     let age: u32 = tc.draw(&generators::integers());
+///     tc.assume(age >= 18);
 ///     // Test logic for adults only...
 /// }
 /// ```
@@ -80,15 +82,17 @@ pub fn assume(condition: bool) {
 ///
 /// Only prints during the final replay of a failing test case.
 ///
+/// Prefer using [`TestCase::note`](crate::TestCase::note) instead.
+///
 /// # Example
 ///
 /// ```no_run
 /// use hegel::generators;
 ///
 /// #[hegel::test]
-/// fn my_test() {
-///     let x: i32 = hegel::draw(&generators::integers());
-///     hegel::note(&format!("Generated x = {}", x));
+/// fn my_test(tc: hegel::TestCase) {
+///     let x: i32 = tc.draw(&generators::integers());
+///     tc.note(&format!("Generated x = {}", x));
 /// }
 /// ```
 pub fn note(message: &str) {
@@ -100,9 +104,9 @@ pub fn note(message: &str) {
 
 /// Draw a value from a generator, logging it on the final replay.
 ///
-/// This is the primary user-facing API for generating values, analogous
-/// to Hypothesis's `data.draw()`. It must not be called inside a
-/// `compose!` block — use the `draw` parameter provided by `compose!` instead.
+/// Prefer using [`TestCase::draw`](crate::TestCase::draw) instead.
+/// This must not be called inside a `compose!` block — use the `draw`
+/// parameter provided by `compose!` instead.
 ///
 /// # Example
 ///
@@ -110,9 +114,9 @@ pub fn note(message: &str) {
 /// use hegel::generators;
 ///
 /// #[hegel::test]
-/// fn my_test() {
-///     let x: i32 = hegel::draw(&generators::integers::<i32>());
-///     let s: String = hegel::draw(&generators::text());
+/// fn my_test(tc: hegel::TestCase) {
+///     let x: i32 = tc.draw(&generators::integers::<i32>());
+///     let s: String = tc.draw(&generators::text());
 /// }
 /// ```
 pub fn draw<T: std::fmt::Debug>(gen: &impl Generate<T>) -> T {

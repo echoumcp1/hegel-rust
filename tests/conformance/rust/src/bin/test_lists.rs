@@ -31,7 +31,7 @@ fn main() {
         std::process::exit(1);
     });
 
-    Hegel::new(move || {
+    Hegel::new(move |_tc| {
         let mut elem_gen = generators::integers::<i32>();
         if let Some(min) = params.min_value {
             elem_gen = elem_gen.min_value(min);

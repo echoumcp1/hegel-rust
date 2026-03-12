@@ -27,7 +27,7 @@ fn main() {
         std::process::exit(1);
     });
 
-    Hegel::new(move || {
+    Hegel::new(move |_tc| {
         let mut gen = generators::binary().min_size(params.min_size);
         if let Some(max) = params.max_size {
             gen = gen.max_size(max);

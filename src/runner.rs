@@ -3,6 +3,7 @@ use crate::control::{
 };
 use crate::generators::TestCaseData;
 use crate::protocol::{Channel, Connection, HANDSHAKE_STRING};
+use crate::test_case::TestCase;
 use ciborium::Value;
 
 use crate::cbor_utils::{as_bool, as_text, as_u64, cbor_map, map_get};
@@ -284,14 +285,14 @@ impl Verbosity {
 /// use hegel::generators;
 ///
 /// #[hegel::test]
-/// fn test_identity() {
-///     let n = hegel::draw(&generators::integers::<i32>());
+/// fn test_identity(tc: hegel::TestCase) {
+///     let n = tc.draw(&generators::integers::<i32>());
 ///     assert!(n + 0 == n); // Identity property
 /// }
 /// ```
 pub fn hegel<F>(test_fn: F)
 where
-    F: FnMut(),
+    F: FnMut(TestCase),
 {
     Hegel::new(test_fn).run();
 }
@@ -308,8 +309,8 @@ where
 /// use hegel::generators;
 ///
 /// #[hegel::test(test_cases = 500, verbosity = Verbosity::Verbose)]
-/// fn test_with_options() {
-///     let n = hegel::draw(&generators::integers::<i32>());
+/// fn test_with_options(tc: hegel::TestCase) {
+///     let n = tc.draw(&generators::integers::<i32>());
 ///     assert!(n + 0 == n);
 /// }
 /// ```
@@ -322,7 +323,7 @@ pub struct Hegel<F> {
 
 impl<F> Hegel<F>
 where
-    F: FnMut(),
+    F: FnMut(TestCase),
 {
     pub fn new(test_fn: F) -> Self {
         Self {
@@ -587,7 +588,7 @@ where
 }
 
 /// Run a single test case.
-fn run_test_case<F: FnMut()>(
+fn run_test_case<F: FnMut(TestCase)>(
     connection: &Arc<Connection>,
     test_channel: Channel,
     test_fn: &mut F,
@@ -601,7 +602,7 @@ fn run_test_case<F: FnMut()>(
     let data = TestCaseData::new(Arc::clone(connection), test_channel, verbosity, is_final);
     set_test_case_data(&data);
 
-    let result = catch_unwind(AssertUnwindSafe(test_fn));
+    let result = catch_unwind(AssertUnwindSafe(|| test_fn(TestCase)));
 
     let (status, origin) = match &result {
         Ok(()) => ("VALID".to_string(), None),
