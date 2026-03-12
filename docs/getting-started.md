@@ -6,7 +6,7 @@ Add Hegel to your `Cargo.toml` as a dev dependency:
 
 ```toml
 [dev-dependencies]
-hegel = { git = "ssh://git@github.com/antithesishq/hegel-rust" }
+hegel = { git = "https://github.com/hegeldev/hegel-rust" }
 ```
 
 The SDK requires [`uv`](https://github.com/astral-sh/uv) installed and on your PATH.

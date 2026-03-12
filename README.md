@@ -12,7 +12,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-hegel = { git = "ssh://git@github.com/antithesishq/hegel-rust" }
+hegel = { git = "https://github.com/hegeldev/hegel-rust" }
 ```
 
 Hegel requires [`uv`](https://docs.astral.sh/uv/), and automatically installs the hegel server on first use. To override the hegel binary, set the `HEGEL_SERVER_CMD` environment variable.
