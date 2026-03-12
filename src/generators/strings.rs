@@ -38,7 +38,7 @@ impl TextGenerator {
 
 impl Generator<String> for TextGenerator {
     fn do_draw(&self, tc: &TestCase) -> String {
-        super::generate_from_schema(tc,&self.build_schema())
+        super::generate_from_schema(tc, &self.build_schema())
     }
 
     fn as_basic(&self) -> Option<BasicGenerator<'_, String>> {
@@ -78,7 +78,7 @@ impl RegexGenerator {
 
 impl Generator<String> for RegexGenerator {
     fn do_draw(&self, tc: &TestCase) -> String {
-        super::generate_from_schema(tc,&self.build_schema())
+        super::generate_from_schema(tc, &self.build_schema())
     }
 
     fn as_basic(&self) -> Option<BasicGenerator<'_, String>> {
@@ -173,7 +173,7 @@ pub struct EmailGenerator;
 
 impl Generator<String> for EmailGenerator {
     fn do_draw(&self, tc: &TestCase) -> String {
-        super::generate_from_schema(tc,&cbor_map! {"type" => "email"})
+        super::generate_from_schema(tc, &cbor_map! {"type" => "email"})
     }
 
     fn as_basic(&self) -> Option<BasicGenerator<'_, String>> {
@@ -191,7 +191,7 @@ pub struct UrlGenerator;
 
 impl Generator<String> for UrlGenerator {
     fn do_draw(&self, tc: &TestCase) -> String {
-        super::generate_from_schema(tc,&cbor_map! {"type" => "url"})
+        super::generate_from_schema(tc, &cbor_map! {"type" => "url"})
     }
 
     fn as_basic(&self) -> Option<BasicGenerator<'_, String>> {
@@ -230,7 +230,7 @@ impl DomainGenerator {
 
 impl Generator<String> for DomainGenerator {
     fn do_draw(&self, tc: &TestCase) -> String {
-        super::generate_from_schema(tc,&self.build_schema())
+        super::generate_from_schema(tc, &self.build_schema())
     }
 
     fn as_basic(&self) -> Option<BasicGenerator<'_, String>> {
@@ -281,7 +281,7 @@ impl IpAddressGenerator {
 
 impl Generator<String> for IpAddressGenerator {
     fn do_draw(&self, tc: &TestCase) -> String {
-        super::generate_from_schema(tc,&self.build_schema())
+        super::generate_from_schema(tc, &self.build_schema())
     }
 
     fn as_basic(&self) -> Option<BasicGenerator<'_, String>> {
@@ -299,7 +299,7 @@ pub struct DateGenerator;
 
 impl Generator<String> for DateGenerator {
     fn do_draw(&self, tc: &TestCase) -> String {
-        super::generate_from_schema(tc,&cbor_map! {"type" => "date"})
+        super::generate_from_schema(tc, &cbor_map! {"type" => "date"})
     }
 
     fn as_basic(&self) -> Option<BasicGenerator<'_, String>> {
@@ -317,7 +317,7 @@ pub struct TimeGenerator;
 
 impl Generator<String> for TimeGenerator {
     fn do_draw(&self, tc: &TestCase) -> String {
-        super::generate_from_schema(tc,&cbor_map! {"type" => "time"})
+        super::generate_from_schema(tc, &cbor_map! {"type" => "time"})
     }
 
     fn as_basic(&self) -> Option<BasicGenerator<'_, String>> {
@@ -335,7 +335,7 @@ pub struct DateTimeGenerator;
 
 impl Generator<String> for DateTimeGenerator {
     fn do_draw(&self, tc: &TestCase) -> String {
-        super::generate_from_schema(tc,&cbor_map! {"type" => "datetime"})
+        super::generate_from_schema(tc, &cbor_map! {"type" => "datetime"})
     }
 
     fn as_basic(&self) -> Option<BasicGenerator<'_, String>> {

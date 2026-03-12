@@ -159,7 +159,7 @@ where
             basic.do_draw(tc)
         } else {
             tc.start_span(labels::OPTIONAL);
-            let is_some: bool = super::generate_from_schema(tc,&cbor_map! {"type" => "boolean"});
+            let is_some: bool = super::generate_from_schema(tc, &cbor_map! {"type" => "boolean"});
             let result = if is_some {
                 Some(self.inner.do_draw(tc))
             } else {

@@ -153,20 +153,19 @@ fn test_tuple10(tc: TestCase) {
 
 #[hegel::test]
 fn test_tuple11(tc: TestCase) {
-    let _: (i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32) =
-        tc.draw(generators::tuples11(
-            generators::integers(),
-            generators::integers(),
-            generators::integers(),
-            generators::integers(),
-            generators::integers(),
-            generators::integers(),
-            generators::integers(),
-            generators::integers(),
-            generators::integers(),
-            generators::integers(),
-            generators::integers(),
-        ));
+    let _: (i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32) = tc.draw(generators::tuples11(
+        generators::integers(),
+        generators::integers(),
+        generators::integers(),
+        generators::integers(),
+        generators::integers(),
+        generators::integers(),
+        generators::integers(),
+        generators::integers(),
+        generators::integers(),
+        generators::integers(),
+        generators::integers(),
+    ));
 }
 
 #[hegel::test]

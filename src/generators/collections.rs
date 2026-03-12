@@ -436,7 +436,9 @@ pub fn arrays<G: Generator<T> + Send + Sync, T, const N: usize>(
     ArrayGenerator::new(element)
 }
 
-impl<G: Generator<T> + Send + Sync, T, const N: usize> Generator<[T; N]> for ArrayGenerator<G, T, N> {
+impl<G: Generator<T> + Send + Sync, T, const N: usize> Generator<[T; N]>
+    for ArrayGenerator<G, T, N>
+{
     fn do_draw(&self, tc: &TestCase) -> [T; N] {
         if let Some(basic) = self.as_basic() {
             basic.do_draw(tc)

@@ -13,13 +13,13 @@ mod tuples;
 pub(crate) mod value;
 
 // public api
-pub use collections::{arrays, fixed_dicts, hashmaps, hashsets, vecs, HashMapGenerator};
-pub use combinators::{one_of, optional, sampled_from};
-pub use compose::{fnv1a_hash, ComposedGenerator};
 pub use crate::test_case::{
     deserialize_value, generate_from_schema, generate_raw, labels, Collection, StopTestError,
     TestCase,
 };
+pub use collections::{arrays, fixed_dicts, hashmaps, hashsets, vecs, HashMapGenerator};
+pub use combinators::{one_of, optional, sampled_from};
+pub use compose::{fnv1a_hash, ComposedGenerator};
 pub use from_type::{from_type, DefaultGenerator};
 pub use generators::{BasicGenerator, BoxedGenerator, Filtered, FlatMapped, Generator, Mapped};
 pub use misc::{booleans, just, none, unit};

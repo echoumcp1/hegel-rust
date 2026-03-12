@@ -27,10 +27,8 @@ fn test_compose_dependent_generation(tc: TestCase) {
 #[hegel::test]
 fn test_compose_with_map(tc: TestCase) {
     let value = tc.draw(
-        hegel::compose!(|tc| {
-            tc.draw(generators::integers::<i32>().min_value(0).max_value(10))
-        })
-        .map(|n| n * 2),
+        hegel::compose!(|tc| { tc.draw(generators::integers::<i32>().min_value(0).max_value(10)) })
+            .map(|n| n * 2),
     );
     assert!(value % 2 == 0);
     assert!((0..=20).contains(&value));

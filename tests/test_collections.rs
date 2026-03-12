@@ -5,16 +5,14 @@ use std::collections::{HashMap, HashSet};
 #[hegel::test]
 fn test_vec_with_max_size(tc: TestCase) {
     let max_size: usize = tc.draw(generators::integers().min_value(0).max_value(20));
-    let vec: Vec<i32> =
-        tc.draw(generators::vecs(generators::integers::<i32>()).max_size(max_size));
+    let vec: Vec<i32> = tc.draw(generators::vecs(generators::integers::<i32>()).max_size(max_size));
     assert!(vec.len() <= max_size);
 }
 
 #[hegel::test]
 fn test_vec_with_min_size(tc: TestCase) {
     let min_size: usize = tc.draw(generators::integers().min_value(0).max_value(20));
-    let vec: Vec<i32> =
-        tc.draw(generators::vecs(generators::integers::<i32>()).min_size(min_size));
+    let vec: Vec<i32> = tc.draw(generators::vecs(generators::integers::<i32>()).min_size(min_size));
     assert!(vec.len() >= min_size);
 }
 
