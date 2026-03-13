@@ -1,4 +1,4 @@
-use super::{integers, labels, BasicGenerator, BoxedGenerator, Collection, Generator, TestCase};
+use super::{BasicGenerator, BoxedGenerator, Collection, Generator, TestCase, integers, labels};
 use crate::cbor_utils::{cbor_map, map_insert};
 use ciborium::Value;
 use std::collections::{HashMap, HashSet};

@@ -1,7 +1,7 @@
 use crate::antithesis::{TestLocation, is_running_in_antithesis};
 use crate::control::{currently_in_test_context, set_in_test_context};
 use crate::protocol::{Channel, Connection, HANDSHAKE_STRING};
-use crate::test_case::{TestCase, ASSUME_FAIL_STRING};
+use crate::test_case::{ASSUME_FAIL_STRING, TestCase};
 use ciborium::Value;
 
 use crate::cbor_utils::{as_bool, as_text, as_u64, cbor_map, map_get};
@@ -9,7 +9,7 @@ use std::backtrace::{Backtrace, BacktraceStatus};
 use std::cell::RefCell;
 use std::fs::{File, OpenOptions};
 use std::os::unix::net::UnixStream;
-use std::panic::{self, catch_unwind, AssertUnwindSafe};
+use std::panic::{self, AssertUnwindSafe, catch_unwind};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
@@ -587,8 +587,12 @@ where
 
         let test_failed = !passed || got_interesting.load(Ordering::SeqCst);
 
-        if is_running_in_antithesis() && let Some(ref loc) = self.test_location {
-            crate::antithesis::emit_assertion(loc, !test_failed);
+        if let Some(ref loc) = self.test_location
+        {
+            if is_running_in_antithesis() {
+                crate::antithesis::emit_assertion(loc, !test_failed);
+            }
+            
         }
 
         if test_failed {
@@ -651,7 +655,9 @@ fn run_test_case<F: FnMut(TestCase)>(
                         let formatted = format_backtrace(&backtrace, is_full);
                         eprintln!("stack backtrace:\n{}", formatted);
                         if !is_full {
-                            eprintln!("note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.");
+                            eprintln!(
+                                "note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace."
+                            );
                         }
                     }
                 }

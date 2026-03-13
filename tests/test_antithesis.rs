@@ -41,7 +41,12 @@ fn main() {
 
     let contents = std::fs::read_to_string(&jsonl_path).expect("Failed to read sdk.jsonl");
     let lines: Vec<&str> = contents.lines().collect();
-    assert_eq!(lines.len(), 2, "Expected 2 lines (declaration + evaluation), got {}", lines.len());
+    assert_eq!(
+        lines.len(),
+        2,
+        "Expected 2 lines (declaration + evaluation), got {}",
+        lines.len()
+    );
 
     let declaration: serde_json::Value =
         serde_json::from_str(lines[0]).expect("Failed to parse declaration line");
@@ -60,7 +65,10 @@ fn main() {
 
     let eval_assert = &evaluation["antithesis_assert"];
     assert_eq!(eval_assert["hit"], true);
-    assert_eq!(eval_assert["condition"], true, "passing test should have condition=true");
+    assert_eq!(
+        eval_assert["condition"], true,
+        "passing test should have condition=true"
+    );
 
     let loc = &eval_assert["location"];
     assert_eq!(loc["function"], "my_test");
@@ -101,5 +109,8 @@ fn main() {
     );
 
     let jsonl_path = output_dir.path().join("sdk.jsonl");
-    assert!(!jsonl_path.exists(), "sdk.jsonl should not be created without ANTITHESIS_OUTPUT_DIR");
+    assert!(
+        !jsonl_path.exists(),
+        "sdk.jsonl should not be created without ANTITHESIS_OUTPUT_DIR"
+    );
 }

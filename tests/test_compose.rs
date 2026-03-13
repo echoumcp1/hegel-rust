@@ -1,8 +1,8 @@
 mod common;
 
 use common::utils::assert_all_examples;
-use hegel::generators::{self, Generator};
 use hegel::TestCase;
+use hegel::generators::{self, Generator};
 
 #[hegel::test]
 fn test_compose_basic(tc: TestCase) {

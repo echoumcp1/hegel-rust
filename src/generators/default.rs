@@ -1,7 +1,7 @@
 use super::{
-    booleans, collections::ArrayGenerator, floats, hashmaps, integers, optional, text, vecs,
     BoolGenerator, BoxedGenerator, FloatGenerator, Generator, HashMapGenerator, IntegerGenerator,
-    OptionalGenerator, TextGenerator, VecGenerator,
+    OptionalGenerator, TextGenerator, VecGenerator, booleans, collections::ArrayGenerator, floats,
+    hashmaps, integers, optional, text, vecs,
 };
 use std::collections::HashMap;
 use std::hash::Hash;

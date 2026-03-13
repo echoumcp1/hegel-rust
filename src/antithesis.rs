@@ -10,7 +10,7 @@ pub struct TestLocation {
 
 pub(crate) fn is_running_in_antithesis() -> bool {
     let output_dir = std::env::var("ANTITHESIS_OUTPUT_DIR");
-    output_dir.is_ok()       
+    output_dir.is_ok()
 }
 
 pub(crate) fn emit_assertion(location: &TestLocation, passed: bool) {
@@ -18,7 +18,10 @@ pub(crate) fn emit_assertion(location: &TestLocation, passed: bool) {
         panic!("emit_assertion must be called inside Antithesis");
     }
 
-    let path = format!("{}/sdk.jsonl", std::env::var("ANTITHESIS_OUTPUT_DIR").unwrap());
+    let path = format!(
+        "{}/sdk.jsonl",
+        std::env::var("ANTITHESIS_OUTPUT_DIR").unwrap()
+    );
 
     let id = format!(
         "{}::{} passes properties",
