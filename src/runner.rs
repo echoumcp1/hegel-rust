@@ -1,4 +1,4 @@
-use crate::antithesis::TestLocation;
+use crate::antithesis::{TestLocation, is_running_in_antithesis};
 use crate::control::{currently_in_test_context, set_in_test_context};
 use crate::protocol::{Channel, Connection, HANDSHAKE_STRING};
 use crate::test_case::{TestCase, ASSUME_FAIL_STRING};
@@ -587,7 +587,7 @@ where
 
         let test_failed = !passed || got_interesting.load(Ordering::SeqCst);
 
-        if let Some(ref loc) = self.test_location {
+        if is_running_in_antithesis() && let Some(ref loc) = self.test_location {
             crate::antithesis::emit_assertion(loc, !test_failed);
         }
 
