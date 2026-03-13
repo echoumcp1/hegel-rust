@@ -20,7 +20,7 @@ pub use crate::test_case::{
 pub use collections::{arrays, fixed_dicts, hashmaps, hashsets, vecs, HashMapGenerator};
 pub use combinators::{one_of, optional, sampled_from};
 pub use compose::{fnv1a_hash, ComposedGenerator};
-pub use from_type::{from_type, DefaultGenerator};
+pub use from_type::{default, DefaultGenerator};
 pub use generators::{BasicGenerator, BoxedGenerator, Filtered, FlatMapped, Generator, Mapped};
 pub use misc::{booleans, just, none, unit};
 pub use numeric::{floats, integers};

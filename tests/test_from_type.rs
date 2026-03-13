@@ -1,84 +1,84 @@
 mod common;
 
 use common::utils::check_can_generate_examples;
-use hegel::generators::from_type;
+use hegel::generators::default;
 use std::collections::HashMap;
 
 #[test]
-fn test_from_type_bool() {
-    check_can_generate_examples(from_type::<bool>());
+fn test_default_bool() {
+    check_can_generate_examples(default::<bool>());
 }
 
 #[test]
-fn test_from_type_string() {
-    check_can_generate_examples(from_type::<String>());
+fn test_default_string() {
+    check_can_generate_examples(default::<String>());
 }
 
 #[test]
-fn test_from_type_ints() {
-    check_can_generate_examples(from_type::<i8>());
-    check_can_generate_examples(from_type::<i16>());
-    check_can_generate_examples(from_type::<i32>());
-    check_can_generate_examples(from_type::<i64>());
-    check_can_generate_examples(from_type::<u8>());
-    check_can_generate_examples(from_type::<u16>());
-    check_can_generate_examples(from_type::<u32>());
-    check_can_generate_examples(from_type::<u64>());
-    check_can_generate_examples(from_type::<i128>());
-    check_can_generate_examples(from_type::<u128>());
-    check_can_generate_examples(from_type::<isize>());
-    check_can_generate_examples(from_type::<usize>());
+fn test_default_ints() {
+    check_can_generate_examples(default::<i8>());
+    check_can_generate_examples(default::<i16>());
+    check_can_generate_examples(default::<i32>());
+    check_can_generate_examples(default::<i64>());
+    check_can_generate_examples(default::<u8>());
+    check_can_generate_examples(default::<u16>());
+    check_can_generate_examples(default::<u32>());
+    check_can_generate_examples(default::<u64>());
+    check_can_generate_examples(default::<i128>());
+    check_can_generate_examples(default::<u128>());
+    check_can_generate_examples(default::<isize>());
+    check_can_generate_examples(default::<usize>());
 }
 
 #[test]
-fn test_from_type_floats() {
-    check_can_generate_examples(from_type::<f32>());
-    check_can_generate_examples(from_type::<f64>());
+fn test_default_floats() {
+    check_can_generate_examples(default::<f32>());
+    check_can_generate_examples(default::<f64>());
 }
 
 #[test]
-fn test_from_type_option() {
-    check_can_generate_examples(from_type::<Option<i32>>());
-    check_can_generate_examples(from_type::<Option<bool>>());
-    check_can_generate_examples(from_type::<Option<String>>());
+fn test_default_option() {
+    check_can_generate_examples(default::<Option<i32>>());
+    check_can_generate_examples(default::<Option<bool>>());
+    check_can_generate_examples(default::<Option<String>>());
 }
 
 #[test]
-fn test_from_type_vec() {
-    check_can_generate_examples(from_type::<Vec<i32>>());
-    check_can_generate_examples(from_type::<Vec<String>>());
-    check_can_generate_examples(from_type::<Vec<bool>>());
+fn test_default_vec() {
+    check_can_generate_examples(default::<Vec<i32>>());
+    check_can_generate_examples(default::<Vec<String>>());
+    check_can_generate_examples(default::<Vec<bool>>());
 }
 
 #[test]
-fn test_from_type_array() {
-    check_can_generate_examples(from_type::<[bool; 2]>());
-    check_can_generate_examples(from_type::<[i32; 5]>());
-    check_can_generate_examples(from_type::<[String; 3]>());
-    check_can_generate_examples(from_type::<[i32; 0]>());
+fn test_default_array() {
+    check_can_generate_examples(default::<[bool; 2]>());
+    check_can_generate_examples(default::<[i32; 5]>());
+    check_can_generate_examples(default::<[String; 3]>());
+    check_can_generate_examples(default::<[i32; 0]>());
 }
 
 #[test]
-fn test_from_type_hashmap() {
-    check_can_generate_examples(from_type::<HashMap<String, i32>>());
-    check_can_generate_examples(from_type::<HashMap<String, bool>>());
+fn test_default_hashmap() {
+    check_can_generate_examples(default::<HashMap<String, i32>>());
+    check_can_generate_examples(default::<HashMap<String, bool>>());
 }
 
 #[test]
-fn test_from_type_tuple() {
-    check_can_generate_examples(from_type::<(i32, bool)>());
-    check_can_generate_examples(from_type::<(i32, bool, String)>());
-    check_can_generate_examples(from_type::<(i32, bool, String, f64)>());
+fn test_default_tuple() {
+    check_can_generate_examples(default::<(i32, bool)>());
+    check_can_generate_examples(default::<(i32, bool, String)>());
+    check_can_generate_examples(default::<(i32, bool, String, f64)>());
 }
 
 #[test]
-fn test_from_type_nested() {
-    check_can_generate_examples(from_type::<Option<Vec<i32>>>());
-    check_can_generate_examples(from_type::<Vec<Vec<i32>>>());
-    check_can_generate_examples(from_type::<Vec<Option<bool>>>());
-    check_can_generate_examples(from_type::<[[i32; 2]; 3]>());
-    check_can_generate_examples(from_type::<Vec<(i32, bool)>>());
-    check_can_generate_examples(from_type::<HashMap<String, Vec<i32>>>());
-    check_can_generate_examples(from_type::<Option<(i32, String)>>());
-    check_can_generate_examples(from_type::<[Option<i32>; 4]>());
+fn test_default_nested() {
+    check_can_generate_examples(default::<Option<Vec<i32>>>());
+    check_can_generate_examples(default::<Vec<Vec<i32>>>());
+    check_can_generate_examples(default::<Vec<Option<bool>>>());
+    check_can_generate_examples(default::<[[i32; 2]; 3]>());
+    check_can_generate_examples(default::<Vec<(i32, bool)>>());
+    check_can_generate_examples(default::<HashMap<String, Vec<i32>>>());
+    check_can_generate_examples(default::<Option<(i32, String)>>());
+    check_can_generate_examples(default::<[Option<i32>; 4]>());
 }

@@ -34,14 +34,14 @@ pub trait DefaultGenerator: Sized {
 /// #[hegel::test]
 /// fn my_test(tc: hegel::TestCase) {
 ///     // Generate with defaults
-///     let person: Person = tc.draw(generators::from_type::<Person>());
+///     let person: Person = tc.draw(generators::default::<Person>());
 ///
 ///     // Customize field generators
-///     let person: Person = tc.draw(generators::from_type::<Person>()
+///     let person: Person = tc.draw(generators::default::<Person>()
 ///         .with_age(generators::integers().min_value(0).max_value(120)));
 /// }
 /// ```
-pub fn from_type<T: DefaultGenerator>() -> BoxedGenerator<'static, T> {
+pub fn default<T: DefaultGenerator>() -> BoxedGenerator<'static, T> {
     T::default_generator().boxed()
 }
 
@@ -204,7 +204,7 @@ where
 ///
 /// This macro creates a hidden generator struct with builder methods for each field,
 /// and implements [`DefaultGenerator`](crate::generators::DefaultGenerator) for the type
-/// so it can be used with [`from_type`](crate::generators::from_type).
+/// so it can be used with [`default`](crate::generators::default).
 ///
 /// # Example
 ///
@@ -225,8 +225,8 @@ where
 ///     age: u32,
 /// });
 ///
-/// // from_type now supports Person:
-/// let gen = generators::from_type::<Person>()
+/// // default now supports Person:
+/// let gen = generators::default::<Person>()
 ///     .with_name(generators::from_regex("[A-Z][a-z]+"))
 ///     .with_age(generators::integers::<u32>().min_value(0).max_value(120));
 ///
