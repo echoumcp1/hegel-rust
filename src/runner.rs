@@ -250,6 +250,30 @@ fn find_hegel() -> String {
         .clone()
 }
 
+/// Health checks that can be suppressed during test execution.
+///
+/// Health checks detect common issues with test configuration that would
+/// otherwise cause tests to run inefficiently or not at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HealthCheck {
+    /// Too many test cases are being filtered out via `assume()`.
+    FilterTooMuch,
+    /// Test execution is too slow.
+    TooSlow,
+    /// Generated data is too large.
+    DataTooLarge,
+}
+
+impl HealthCheck {
+    fn as_str(&self) -> &'static str {
+        match self {
+            HealthCheck::FilterTooMuch => "filter_too_much",
+            HealthCheck::TooSlow => "too_slow",
+            HealthCheck::DataTooLarge => "data_too_large",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verbosity {
     Quiet,
@@ -314,6 +338,7 @@ pub struct Hegel<F> {
     test_cases: u64,
     verbosity: Verbosity,
     seed: Option<u64>,
+    suppress_health_check: Vec<HealthCheck>,
 }
 
 impl<F> Hegel<F>
@@ -326,6 +351,7 @@ where
             test_cases: 100,
             verbosity: Verbosity::Normal,
             seed: None,
+            suppress_health_check: Vec::new(),
         }
     }
 
@@ -341,6 +367,15 @@ where
 
     pub fn seed(mut self, seed: Option<u64>) -> Self {
         self.seed = seed;
+        self
+    }
+
+    /// Suppress a health check so it does not cause test failure.
+    ///
+    /// Health checks detect common issues like excessive filtering or slow
+    /// tests. Use this to suppress specific checks when they are expected.
+    pub fn suppress_health_check(mut self, check: HealthCheck) -> Self {
+        self.suppress_health_check.push(check);
         self
     }
 
@@ -452,12 +487,26 @@ where
         let got_interesting = Arc::new(AtomicBool::new(false));
         let test_channel = connection.new_channel();
 
-        let run_test_msg = cbor_map! {
+        let suppress_names: Vec<Value> = self
+            .suppress_health_check
+            .iter()
+            .map(|c| Value::Text(c.as_str().to_string()))
+            .collect();
+
+        let mut run_test_msg = cbor_map! {
             "command" => "run_test",
             "test_cases" => self.test_cases,
             "seed" => self.seed.map_or(Value::Null, Value::from),
             "channel_id" => test_channel.channel_id
         };
+        if !suppress_names.is_empty() {
+            if let Value::Map(ref mut map) = run_test_msg {
+                map.push((
+                    Value::Text("suppress_health_check".to_string()),
+                    Value::Array(suppress_names),
+                ));
+            }
+        }
 
         let run_test_id = control
             .send_request(cbor_encode(&run_test_msg))
@@ -522,6 +571,17 @@ where
                     panic!("unknown event: {}", event_type);
                 }
             }
+        }
+
+        // Check for health check failure before processing results
+        if let Some(failure_msg) = map_get(&result_data, "health_check_failure").and_then(as_text) {
+            // Clean up so the server can exit gracefully
+            drop(test_channel);
+            drop(control);
+            let _ = connection.close();
+            drop(connection);
+            let _ = child.wait().expect("Failed to wait for hegel server");
+            panic!("Health check failure:\n{}", failure_msg);
         }
 
         let n_interesting = map_get(&result_data, "interesting_test_cases")
