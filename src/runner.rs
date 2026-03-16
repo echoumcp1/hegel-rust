@@ -587,12 +587,10 @@ where
 
         let test_failed = !passed || got_interesting.load(Ordering::SeqCst);
 
-        if let Some(ref loc) = self.test_location
-        {
+        if let Some(ref loc) = self.test_location {
             if is_running_in_antithesis() {
                 crate::antithesis::emit_assertion(loc, !test_failed);
             }
-            
         }
 
         if test_failed {
