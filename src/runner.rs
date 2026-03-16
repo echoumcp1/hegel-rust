@@ -438,8 +438,8 @@ where
             let _ = child.kill();
             panic!(
                 "hegel-rust supports protocol versions {lo} through {hi}, but \
-                 got server version {version}. Upgrading hegel-rust or downgrading \
-                 your hegel server might help."
+                 the connected server is using protocol version {version}. Upgrading \
+                 hegel-rust or downgrading hegel-core might help."
             );
         }
 

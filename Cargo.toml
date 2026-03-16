@@ -1,5 +1,5 @@
 [package]
-name = "hegel"
+name = "hegeltest"
 version = "0.1.0"
 edition = "2021"
 # if you bump this, also bump ci.yml and hegel-derive/cargo.toml
@@ -8,6 +8,9 @@ description = "Property-based testing library for the Hegel test data generator"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/hegeldev/hegel-rust"
+
+[lib]
+name = "hegel"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
