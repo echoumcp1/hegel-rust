@@ -33,8 +33,7 @@ impl TempRustProject {
         let hegel_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let lock_src = hegel_path.join("Cargo.lock");
         if lock_src.exists() {
-            std::fs::copy(&lock_src, project_path.join("Cargo.lock"))
-                .unwrap();
+            std::fs::copy(&lock_src, project_path.join("Cargo.lock")).unwrap();
         }
 
         Self {

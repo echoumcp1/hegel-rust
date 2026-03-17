@@ -34,12 +34,7 @@ fn my_test(tc: hegel::TestCase) {
 
     let contents = std::fs::read_to_string(&jsonl_path).unwrap();
     let lines: Vec<&str> = contents.lines().collect();
-    assert_eq!(
-        lines.len(),
-        2,
-        "Got {} lines",
-        lines.len()
-    );
+    assert_eq!(lines.len(), 2, "Got {} lines", lines.len());
 
     let declaration: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
     let evaluation: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
@@ -53,31 +48,37 @@ fn my_test(tc: hegel::TestCase) {
         "begin_column": 0,
     });
 
-    assert_eq!(declaration, serde_json::json!({
-        "antithesis_assert": {
-            "hit": false,
-            "must_hit": true,
-            "assert_type": "always",
-            "display_type": "Always",
-            "condition": false,
-            "id": expected_id,
-            "message": expected_id,
-            "location": expected_location,
-        }
-    }));
+    assert_eq!(
+        declaration,
+        serde_json::json!({
+            "antithesis_assert": {
+                "hit": false,
+                "must_hit": true,
+                "assert_type": "always",
+                "display_type": "Always",
+                "condition": false,
+                "id": expected_id,
+                "message": expected_id,
+                "location": expected_location,
+            }
+        })
+    );
 
-    assert_eq!(evaluation, serde_json::json!({
-        "antithesis_assert": {
-            "hit": true,
-            "must_hit": true,
-            "assert_type": "always",
-            "display_type": "Always",
-            "condition": true,
-            "id": expected_id,
-            "message": expected_id,
-            "location": expected_location,
-        }
-    }));
+    assert_eq!(
+        evaluation,
+        serde_json::json!({
+            "antithesis_assert": {
+                "hit": true,
+                "must_hit": true,
+                "assert_type": "always",
+                "display_type": "Always",
+                "condition": true,
+                "id": expected_id,
+                "message": expected_id,
+                "location": expected_location,
+            }
+        })
+    );
 }
 
 #[test]
