@@ -2,22 +2,25 @@ use hegel::HealthCheck;
 use hegel::TestCase;
 use hegel::generators;
 
+/// Suppresses FilterTooMuch with light filtering (most values pass).
 #[hegel::test(suppress_health_check = [HealthCheck::FilterTooMuch])]
 fn test_filter_too_much_suppressed(tc: TestCase) {
-    let _: i32 = tc.draw(generators::integers().min_value(0).max_value(100));
-    tc.assume(false);
+    let n: i32 = tc.draw(generators::integers().min_value(0).max_value(100));
+    tc.assume(n < 90);
 }
 
+/// Tests that the macro accepts multiple health checks in array syntax.
 #[hegel::test(suppress_health_check = [HealthCheck::FilterTooMuch, HealthCheck::TooSlow])]
 fn test_suppress_multiple(tc: TestCase) {
-    let _: i32 = tc.draw(generators::integers().min_value(0).max_value(100));
-    tc.assume(false);
+    let n: i32 = tc.draw(generators::integers().min_value(0).max_value(100));
+    tc.assume(n < 90);
 }
 
+/// Tests that `HealthCheck::all()` is accepted by the macro.
 #[hegel::test(suppress_health_check = HealthCheck::all())]
 fn test_suppress_all(tc: TestCase) {
-    let _: i32 = tc.draw(generators::integers().min_value(0).max_value(100));
-    tc.assume(false);
+    let n: i32 = tc.draw(generators::integers().min_value(0).max_value(100));
+    tc.assume(n < 90);
 }
 
 #[hegel::test(

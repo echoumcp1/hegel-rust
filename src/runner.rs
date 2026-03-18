@@ -298,28 +298,6 @@ impl HealthCheck {
     }
 }
 
-/// Wrapper type to allow `suppress_health_check` to accept either a single
-/// [`HealthCheck`] or an array/vec of them.
-pub struct HealthCheckList(Vec<HealthCheck>);
-
-impl From<HealthCheck> for HealthCheckList {
-    fn from(check: HealthCheck) -> Self {
-        HealthCheckList(vec![check])
-    }
-}
-
-impl<const N: usize> From<[HealthCheck; N]> for HealthCheckList {
-    fn from(checks: [HealthCheck; N]) -> Self {
-        HealthCheckList(checks.to_vec())
-    }
-}
-
-impl From<Vec<HealthCheck>> for HealthCheckList {
-    fn from(checks: Vec<HealthCheck>) -> Self {
-        HealthCheckList(checks)
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verbosity {
     Quiet,
@@ -433,8 +411,8 @@ where
     ///     tc.assume(n > 0);
     /// }
     /// ```
-    pub fn suppress_health_check(mut self, checks: impl Into<HealthCheckList>) -> Self {
-        self.suppress_health_check.extend(checks.into().0);
+    pub fn suppress_health_check(mut self, checks: impl IntoIterator<Item = HealthCheck>) -> Self {
+        self.suppress_health_check.extend(checks);
         self
     }
 

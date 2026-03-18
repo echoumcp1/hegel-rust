@@ -231,4 +231,4 @@ pub use test_case::{generate_from_schema, generate_raw};
 // re-export public api
 pub use hegel_macros::Generator;
 pub use hegel_macros::test;
-pub use runner::{HealthCheck, HealthCheckList, Hegel, Verbosity, hegel};
+pub use runner::{HealthCheck, Hegel, Verbosity, hegel};
