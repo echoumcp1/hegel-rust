@@ -226,7 +226,7 @@ pub use ciborium;
 #[doc(hidden)]
 pub use paste;
 #[doc(hidden)]
-pub use test_case::{generate_from_schema, generate_raw, __IsTestCase, __assert_is_test_case};
+pub use test_case::{__IsTestCase, __assert_is_test_case, generate_from_schema, generate_raw};
 
 // re-export public api
 pub use hegel_macros::Generator;
