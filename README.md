@@ -11,7 +11,7 @@ In your `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-hegel = { git = "https://github.com/hegeldev/hegel-rust" }
+hegeltest = "0.1.0"
 ```
 
 Hegel requires either:

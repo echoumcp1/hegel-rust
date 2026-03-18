@@ -227,11 +227,12 @@ pub use ciborium;
 #[doc(hidden)]
 pub use paste;
 #[doc(hidden)]
-pub use test_case::{generate_from_schema, generate_raw};
+pub use test_case::{__IsTestCase, __assert_is_test_case, generate_from_schema, generate_raw};
 
 // re-export public api
 #[doc(hidden)]
 pub use antithesis::TestLocation;
 pub use hegel_macros::Generator;
+pub use hegel_macros::composite;
 pub use hegel_macros::test;
-pub use runner::{Hegel, Verbosity, hegel};
+pub use runner::{HealthCheck, Hegel, Verbosity, hegel};
