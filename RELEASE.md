@@ -1,3 +1,5 @@
-RELEASE_TYPE: minor
+RELEASE_TYPE: patch
 
-This release adds health check support. A new `HealthCheck` enum and `suppress_health_check()` builder method allow suppressing specific health checks (e.g., `FilterTooMuch`, `TooSlow`, `DataTooLarge`). Health check failures from the server are now reported as panics with descriptive messages.
+This release adds support for `HealthCheck`. A health check is a proactive error raised by Hegel when we detect your test is likely to have degraded testing power or performance. For example, `FilterTooMuch` is raised when too many test cases are filtered out by the rejection sampling of `.filter()` or `assume()`.
+
+Health checks can be suppressed with the new `suppess_health_check` setting.
