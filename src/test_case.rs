@@ -9,13 +9,21 @@ use std::sync::{Arc, LazyLock};
 
 use crate::generators::value;
 
-// This is used only as a mechanism for printing a nice error message when the user forgets the
-// test case parameter.
+// We use the __IsTestCase trait internally to provide nice error messages for misuses of #[composite].
+// It should not be used by users.
+//
+// The idea is #[composite] calls __assert_is_test_case(<first param>), which errors with our on_unimplemented
+// message iff the first param does not have type TestCase.
+
 #[diagnostic::on_unimplemented(
-    message = "Functions marked with #[composite] must have a first parameter of type TestCase.",
+    // NOTE: worth checking if edits to this message should also be applied to the similar-but-different
+    // error message in #[composite] in hegel-macros.
+    message = "The first parameter in a #[composite] generator must have type TestCase.",
     label = "This type does not match `TestCase`."
 )]
 pub trait __IsTestCase {}
+impl __IsTestCase for TestCase {}
+pub fn __assert_is_test_case<T: __IsTestCase>() {}
 
 static PROTOCOL_DEBUG: LazyLock<bool> = LazyLock::new(|| {
     matches!(
@@ -261,10 +269,6 @@ impl TestCase {
         let _ = inner.channel.close();
     }
 }
-
-impl __IsTestCase for TestCase {}
-
-pub fn __assert_is_test_case<T: __IsTestCase>() {}
 
 /// Send a schema to the server and return the raw CBOR response.
 #[doc(hidden)]

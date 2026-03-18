@@ -4,11 +4,6 @@ use syn::punctuated::Punctuated;
 use syn::token::Comma;
 use syn::{FnArg, ItemFn, ReturnType, parse_quote, parse2};
 
-const MISSING_TEST_CASE_PARAMETER: &str =
-    "Functions marked with #[composite] must have a first parameter of type TestCase.";
-const MISSING_COMPOSITE_RETURN_TYPE: &str =
-    "Functions marked with #[composite] must have an explicit return type.";
-
 // Our goal is to expand this
 //
 // #[hegel::composite]
@@ -27,13 +22,17 @@ pub fn expand_composite(mut f: ItemFn) -> TokenStream {
     let input_parameters: Vec<FnArg> = f.sig.inputs.iter().cloned().collect();
 
     let Some((FnArg::Typed(tc_arg), passthrough)) = input_parameters.split_first() else {
-        panic!("{}", MISSING_TEST_CASE_PARAMETER)
+        panic!(
+            "A #[composite] generator must define a first parameter of type TestCase. When \
+            drawing from a #[composite] generator with tc.draw(my_composite_gen), `tc` will \
+            be automatically passed to my_composite_gen as the first argument."
+        )
     };
     let tc_pattern = &tc_arg.pat;
     let tc_type = &tc_arg.ty;
 
     let ReturnType::Type(_, return_type) = &f.sig.output else {
-        panic!("{}", MISSING_COMPOSITE_RETURN_TYPE)
+        panic!("#[composite] generators must explicitly declare a return type.")
     };
 
     let composed_generator_type = quote! {

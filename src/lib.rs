@@ -219,7 +219,6 @@ mod test_case;
 pub use control::currently_in_test_context;
 pub use generators::Generator;
 pub use test_case::TestCase;
-pub use test_case::{__IsTestCase, __assert_is_test_case};
 
 // re-export for macro use
 #[doc(hidden)]
@@ -227,7 +226,7 @@ pub use ciborium;
 #[doc(hidden)]
 pub use paste;
 #[doc(hidden)]
-pub use test_case::{generate_from_schema, generate_raw};
+pub use test_case::{generate_from_schema, generate_raw, __IsTestCase, __assert_is_test_case};
 
 // re-export public api
 pub use hegel_macros::Generator;
