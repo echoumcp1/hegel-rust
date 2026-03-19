@@ -21,6 +21,8 @@ Hegel requires either:
 
 ## Quickstart
 
+Here's a quick example of how to write a Hegel test:
+
 ```rust
 use hegel::generators;
 
@@ -32,5 +34,4 @@ fn test_addition_commutative(tc: hegel::TestCase) {
 }
 ```
 
-See [docs/getting-started.md](docs/getting-started.md) for more.
-
+See [docs/getting-started.md](docs/getting-started.md) for more on how to use Hegel.
