@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9 - 2026-03-19
+
+This patch bumps the minimum supported protocol version to 0.6.
+
 ## 0.1.8 - 2026-03-19
 
 When the hegel server process exits unexpectedly, the library now detects this immediately and fails with a clear error pointing to `.hegel/server.log`, instead of blocking for up to 120 seconds on the socket read timeout.
