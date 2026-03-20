@@ -185,11 +185,26 @@ fn ensure_hegel_installed() -> Result<String, String> {
         .args(["venv", "--clear", &venv_dir])
         .stderr(log_file.try_clone().unwrap())
         .stdout(log_file.try_clone().unwrap())
-        .status()
-        .map_err(|e| format!("Failed to run uv venv: {e}"))?;
-    if !status.success() {
-        let log = std::fs::read_to_string(&install_log).unwrap_or_default();
-        return Err(format!("uv venv failed. Install log:\n{log}"));
+        .status();
+    match &status {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(format!(
+                "Could not find `uv` on your PATH. Hegel requires uv to \
+                 automatically install its server component.\n\n\
+                 To fix this, either:\n\
+                 - Install uv: https://docs.astral.sh/uv/getting-started/installation/\n\
+                 - Or set {HEGEL_SERVER_COMMAND_ENV} to a hegel-core binary path\n\n\
+                 For more details, see: https://github.com/hegeldev/hegel-rust/blob/main/docs/installation.md"
+            ));
+        }
+        Err(e) => {
+            return Err(format!("Failed to run `uv venv`: {e}"));
+        }
+        Ok(s) if !s.success() => {
+            let log = std::fs::read_to_string(&install_log).unwrap_or_default();
+            return Err(format!("uv venv failed. Install log:\n{log}"));
+        }
+        Ok(_) => {}
     }
 
     let python_path = format!("{venv_dir}/bin/python");
@@ -204,11 +219,11 @@ fn ensure_hegel_installed() -> Result<String, String> {
         .stderr(log_file.try_clone().unwrap())
         .stdout(log_file)
         .status()
-        .map_err(|e| format!("Failed to run uv pip install: {e}"))?;
+        .map_err(|e| format!("Failed to run `uv pip install`: {e}"))?;
     if !status.success() {
         let log = std::fs::read_to_string(&install_log).unwrap_or_default();
         return Err(format!(
-            "Failed to install hegel (version: {HEGEL_SERVER_VERSION}). \
+            "Failed to install hegel-core (version: {HEGEL_SERVER_VERSION}). \
              Set {HEGEL_SERVER_COMMAND_ENV} to a hegel binary path to skip installation.\n\
              Install log:\n{log}"
         ));

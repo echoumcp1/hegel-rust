@@ -10,6 +10,7 @@ pub struct TempRustProject {
     _temp_dir: TempDir,
     project_path: PathBuf,
     env_vars: Vec<(String, String)>,
+    env_removes: Vec<String>,
     features: Vec<String>,
     expect_failure: Option<String>,
 }
@@ -40,6 +41,7 @@ impl TempRustProject {
             _temp_dir: temp_dir,
             project_path,
             env_vars: Vec::new(),
+            env_removes: Vec::new(),
             features: Vec::new(),
             expect_failure: None,
         }
@@ -74,6 +76,11 @@ impl TempRustProject {
         self
     }
 
+    pub fn env_remove(mut self, key: &str) -> Self {
+        self.env_removes.push(key.to_string());
+        self
+    }
+
     fn cargo(&self, args: &[&str]) -> RunOutput {
         let hegel_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let features = if self.features.is_empty() {
@@ -105,6 +112,9 @@ hegeltest = {{ path = "{path}"{features} }}
         let mut cmd = Command::new(env!("CARGO"));
         cmd.args(args).current_dir(&self.project_path);
 
+        for key in &self.env_removes {
+            cmd.env_remove(key);
+        }
         for (key, value) in &self.env_vars {
             cmd.env(key, value);
         }
