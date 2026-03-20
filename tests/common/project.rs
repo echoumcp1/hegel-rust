@@ -4,16 +4,29 @@
 use super::utils::assert_matches_regex;
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus};
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tempfile::TempDir;
 
-// use a unique package name in our Cargo.toml to avoid cargo using the cached build from
-// a different test
+// cache build output from TempRustProject across tests. Compilation time is substantial
+// (10+ seconds) and this lets us only incur that cost on the first test.
+//
+// We clear the dir at the start to ensure a fresh environment on each test run.
+static SHARED_TARGET_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+    let path = std::env::temp_dir().join("hegel-test-cargo-target");
+    let _ = std::fs::remove_dir_all(&path);
+    std::fs::create_dir_all(&path).unwrap();
+    path
+});
+
+// use a unique package name in our Cargo.toml to avoid lock contention of parallel
+// cargo builds within the shared target dir.
 static PACKAGE_NAME_ID: AtomicU64 = AtomicU64::new(0);
 
 pub struct TempRustProject {
     _temp_dir: TempDir,
     project_path: PathBuf,
+    crate_name: String,
     env_vars: Vec<(String, String)>,
     env_removes: Vec<String>,
     features: Vec<String>,
@@ -32,29 +45,14 @@ impl TempRustProject {
         let temp_dir = TempDir::new().unwrap();
         let project_path = temp_dir.path().to_path_buf();
 
-        let hegel_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let id = PACKAGE_NAME_ID.fetch_add(1, Ordering::Relaxed);
         let crate_name = format!("temp_hegel_test_{}", id);
-        let cargo_toml = format!(
-            r#"[package]
-name = "{crate_name}"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-hegeltest = {{ path = "{}" }}
-"#,
-            hegel_path.display()
-        );
-        std::fs::write(project_path.join("Cargo.toml"), cargo_toml)
-            .expect("Failed to write Cargo.toml");
 
         // Copy the main project's Cargo.lock so the temp project uses the same
         // pinned dependency versions. Without this, cargo resolves fresh and may
         // pull in crates (e.g. getrandom 0.4+) that require a newer Rust edition
         // than our MSRV supports.
-        let hegel_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let lock_src = hegel_path.join("Cargo.lock");
+        let lock_src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock");
         if lock_src.exists() {
             std::fs::copy(&lock_src, project_path.join("Cargo.lock")).unwrap();
         }
@@ -62,6 +60,7 @@ hegeltest = {{ path = "{}" }}
         Self {
             _temp_dir: temp_dir,
             project_path,
+            crate_name,
             env_vars: Vec::new(),
             env_removes: Vec::new(),
             features: Vec::new(),
@@ -104,9 +103,7 @@ hegeltest = {{ path = "{}" }}
     }
 
     fn cargo(&self, args: &[&str]) -> RunOutput {
-        // cache build output from TempRustProject across tests. Compilation time is substantial
-        // (10+ seconds) and this lets us only incur that cost on the first test.
-        let cached_target = std::env::temp_dir().join("hegel-test-cargo-target");
+        let cached_target = &*SHARED_TARGET_DIR;
 
         let hegel_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let features = if self.features.is_empty() {
@@ -123,13 +120,14 @@ hegeltest = {{ path = "{}" }}
         };
         let cargo_toml = format!(
             r#"[package]
-name = "temp_hegel_test"
+name = "{crate_name}"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 hegeltest = {{ path = "{path}"{features} }}
 "#,
+            crate_name = self.crate_name,
             path = hegel_path.display(),
             features = features,
         );

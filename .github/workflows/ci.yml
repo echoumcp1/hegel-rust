@@ -118,8 +118,8 @@ jobs:
         run: cargo docs-rs
 
   # test with the minimal versions of all our dependencies
-  minimal:
-    name: minimal versions
+  test-minimal:
+    name: test-minimal
     runs-on: ubuntu-latest
     permissions:
       contents: read
