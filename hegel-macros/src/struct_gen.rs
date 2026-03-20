@@ -30,11 +30,8 @@ pub(crate) fn derive_struct_generator(input: &DeriveInput, data: &syn::DataStruc
 
     let field_types: Vec<_> = fields.iter().map(|f| &f.ty).collect();
 
-    // Generate the with_* method names
-    let with_methods: Vec<_> = field_names
-        .iter()
-        .map(|name| format_ident!("with_{}", name))
-        .collect();
+    // Generate the builder method names (same as field names, no prefix)
+    let builder_methods: Vec<_> = field_names.to_vec();
 
     // Generate field definitions for the generator struct
     let generator_fields = field_names
@@ -60,11 +57,11 @@ pub(crate) fn derive_struct_generator(input: &DeriveInput, data: &syn::DataStruc
     // Generator Default trait bounds for new()
     let default_bounds = default_gen_bounds(&field_types, quote! { 'a });
 
-    // Generate with_* methods
+    // Generate builder methods
     let with_method_impls = field_names
         .iter()
         .zip(field_types.iter())
-        .zip(with_methods.iter())
+        .zip(builder_methods.iter())
         .map(|((field_name, field_type), method_name)| {
             quote! {
                 /// Set a custom generator for this field.

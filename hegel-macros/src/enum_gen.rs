@@ -142,16 +142,16 @@ pub(crate) fn derive_enum_generator(input: &DeriveInput, data: &syn::DataEnum) -
         .flat_map(|variant| default_gen_bounds(&variant_field_types(variant), quote! { 'a }))
         .collect();
 
-    // Generate with_VariantName() builder methods
+    // Generate VariantName() builder methods
     let with_methods: Vec<_> = data_variants
         .iter()
         .map(|variant| {
             let variant_name = &variant.ident;
-            let with_method_name = format_ident!("with_{}", variant_name);
 
             quote! {
                 /// Set a custom generator for the #variant_name variant.
-                pub fn #with_method_name<G>(mut self, generator: G) -> Self
+                #[allow(non_snake_case)]
+                pub fn #variant_name<G>(mut self, generator: G) -> Self
                 where
                     G: hegel::generators::Generator<#enum_name> + Send + Sync + 'a,
                 {
@@ -489,15 +489,14 @@ fn generate_variant_generator(
             field_names,
             field_types,
         } => {
-            // Generate with_field methods
-            let with_methods: Vec<_> = field_names
+            // Generate field builder methods (same name as field, no prefix)
+            let builder_methods: Vec<_> = field_names
                 .iter()
                 .zip(field_types.iter())
                 .map(|(field_name, field_type)| {
-                    let with_method_name = format_ident!("with_{}", field_name);
                     quote! {
                         /// Set a custom generator for this field.
-                        pub fn #with_method_name<G>(mut self, generator: G) -> Self
+                        pub fn #field_name<G>(mut self, generator: G) -> Self
                         where
                             G: hegel::generators::Generator<#field_type> + Send + Sync + 'a,
                         {
@@ -591,7 +590,7 @@ fn generate_variant_generator(
                         }
                     }
 
-                    #(#with_methods)*
+                    #(#builder_methods)*
                 }
 
                 impl<'a> Default for #variant_generator_name<'a>
@@ -655,7 +654,7 @@ fn generate_variant_generator(
                     }
 
                     /// Set a custom generator for the value.
-                    pub fn with_value<G>(mut self, generator: G) -> Self
+                    pub fn value<G>(mut self, generator: G) -> Self
                     where
                         G: hegel::generators::Generator<#field_type> + Send + Sync + 'a,
                     {
@@ -703,14 +702,13 @@ fn generate_variant_generator(
                 .map(|i| format_ident!("_{}", i))
                 .collect();
 
-            let with_methods: Vec<_> = field_indices
+            let builder_methods: Vec<_> = field_indices
                 .iter()
                 .zip(field_types.iter())
                 .map(|(field_idx, field_type)| {
-                    let with_method_name = format_ident!("with{}", field_idx);
                     quote! {
                         /// Set a custom generator for this field.
-                        pub fn #with_method_name<G>(mut self, generator: G) -> Self
+                        pub fn #field_idx<G>(mut self, generator: G) -> Self
                         where
                             G: hegel::generators::Generator<#field_type> + Send + Sync + 'a,
                         {
@@ -799,7 +797,7 @@ fn generate_variant_generator(
                         }
                     }
 
-                    #(#with_methods)*
+                    #(#builder_methods)*
                 }
 
                 impl<'a> Default for #variant_generator_name<'a>

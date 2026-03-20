@@ -170,7 +170,7 @@
 //!
 //!     // Customize field generators
 //!     let person: Person = tc.draw(generators::default::<Person>()
-//!         .with_age(generators::integers().min_value(0).max_value(120)));
+//!         .age(generators::integers().min_value(0).max_value(120)));
 //! }
 //! ```
 //!
