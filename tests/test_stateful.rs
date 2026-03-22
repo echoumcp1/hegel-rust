@@ -1,91 +1,125 @@
-use hegel::TestCase;
-use hegel::generators::integers;
-use hegel::stateful::{Variables, variables};
-use std::cmp::min;
+mod common;
 
-struct DieHard {
-    small: i32,
-    big: i32,
+use common::project::TempRustProject;
+use hegel::TestCase;
+use hegel::generators::{integers, vecs};
+use hegel::stateful::{Variables, variables};
+
+#[test]
+fn test_state_machine_failure() {
+    let code = r#"
+use hegel::TestCase;
+
+struct Linear {
+    state: i32,
 }
 
 #[hegel::state_machine]
-impl DieHard {
+impl Linear {
     #[rule]
-    fn fill_small(&mut self, _tc: &TestCase) {
-        self.small = 3;
+    fn zero(&mut self, tc: &TestCase) {
+        tc.assume(self.state == 0);
+        self.state += 1;
     }
 
     #[rule]
-    fn fill_big(&mut self, _tc: &TestCase) {
-        self.big = 5;
+    fn one(&mut self, tc: &TestCase) {
+        tc.assume(self.state == 1);
+        self.state += 1;
     }
 
     #[rule]
-    fn empty_small(&mut self, _tc: &TestCase) {
-        self.small = 0;
+    fn two(&mut self, tc: &TestCase) {
+        tc.assume(self.state == 2);
+        self.state += 1;
     }
 
     #[rule]
-    fn empty_big(&mut self, _tc: &TestCase) {
-        self.big = 0;
-    }
-
-    #[rule]
-    fn pour_small_into_big(&mut self, _tc: &TestCase) {
-        let big = self.big;
-        self.big = min(5, self.big + self.small);
-        self.small -= self.big - big;
-    }
-
-    #[rule]
-    fn pour_big_into_small(&mut self, _tc: &TestCase) {
-        let small = self.small;
-        self.small = min(3, self.small + self.big);
-        self.big -= self.small - small;
+    fn three(&mut self, tc: &TestCase) {
+        tc.assume(self.state == 3);
+        self.state += 1;
     }
 
     #[invariant]
-    fn physics_of_jugs(&self, _tc: &TestCase) {
-        assert!(0 <= self.small && self.small <= 3);
-        assert!(0 <= self.big && self.big <= 5);
-    }
-
-    #[invariant]
-    fn die_hard_problem_not_solved(&self, tc: &TestCase) {
-        tc.note(&format!("small / big = {0} / {1}", self.small, self.big));
-        assert!(self.big != 4);
+    fn upper_bound(&self, _tc: &TestCase) {
+        assert!(self.state < 4);
     }
 }
 
-#[hegel::test(test_cases = 1)]
-fn test_die_hard(tc: TestCase) {
-    let m = DieHard { small: 0, big: 0 };
+#[hegel::test]
+fn test_upper_bound(tc: TestCase) {
+    let m = Linear { state: 0 };
     hegel::stateful::run(m, tc);
 }
 
-struct VariableMachine {
+fn main() {}
+"#;
+
+    TempRustProject::new()
+        .main_file(code)
+        .expect_failure("assertion failed: self.state < 4")
+        .cargo_test(&[]);
+}
+
+// Consuming an element from a set should mean subsequent draws never yield the element.
+struct TestConsumeMachine {
     numbers: Variables<i32>,
+    consumed: i32,
 }
 
 #[hegel::state_machine]
-impl VariableMachine {
+impl TestConsumeMachine {
     #[rule]
-    fn generate(&mut self, tc: &TestCase) {
-        let i = tc.draw(integers::<i32>());
-        self.numbers.add(i);
-        assert!(!self.numbers.empty());
-    }
-
-    #[rule]
-    fn add(&mut self, _tc: &TestCase) {
-        let _ = self.numbers.draw();
+    fn draw(&mut self, _tc: &TestCase) {
+        let x = self.numbers.draw();
+        assert!(*x != self.consumed);
     }
 }
 
-#[hegel::test(test_cases = 1000)]
-fn test_variables(tc: TestCase) {
-    let m = VariableMachine {
-        numbers: variables(&tc),
+#[hegel::test]
+fn test_consume(tc: TestCase) {
+    let ints = integers::<i32>;
+    let elements = tc.draw(vecs(ints()).unique());
+    tc.assume(!elements.is_empty());
+    let mut bundle = variables(&tc);
+    for element in elements.clone() {
+        bundle.add(element);
+    }
+    let consumed = bundle.consume();
+    let m = TestConsumeMachine {
+        numbers: bundle,
+        consumed,
+    };
+    hegel::stateful::run(m, tc);
+}
+
+// Drawing an element from a bundle should always yield an element that was previously added.
+struct TestDrawDomainMachine {
+    domain: Vec<i32>,
+    variables: Variables<i32>,
+}
+
+#[hegel::state_machine]
+impl TestDrawDomainMachine {
+    #[rule]
+    fn draw(&mut self, _tc: &TestCase) {
+        let x = self.variables.draw();
+        assert!(self.domain.contains(x));
+    }
+}
+
+#[hegel::test]
+fn test_draw_domain(tc: TestCase) {
+    let ints = integers::<i32>;
+    let elements = tc.draw(vecs(ints()));
+    tc.assume(!elements.is_empty());
+    let mut bundle = variables(&tc);
+    for element in elements.clone() {
+        bundle.add(element);
+    }
+    let m = TestDrawDomainMachine {
+        domain: elements,
+        variables: bundle,
     };
     hegel::stateful::run(m, tc);
 }
