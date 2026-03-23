@@ -11,11 +11,7 @@ use std::fmt::Debug;
 
 // some of our tests differ in behavior in our nightly rust job.
 pub fn is_nightly() -> bool {
-    let output = std::process::Command::new("rustc")
-        .arg("--version")
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&output.stdout).contains("nightly")
+    std::env::var("HEGEL_RUNNING_TESTS_WITH_RUST_NIGHTLY").is_ok_and(|v| v == "1")
 }
 
 pub fn assert_matches_regex(text: &str, pattern: &str) {
