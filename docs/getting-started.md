@@ -119,6 +119,7 @@ You can then draw values for `driving_license` that depend on the `age` field:
 ```rust
 use hegel::generators::booleans;
 
+#[hegel::composite]
 fn generate_person(tc: TestCase) -> Person {
     let age = tc.draw(integers::<i32>());
     let name = tc.draw(text());
@@ -128,6 +129,7 @@ fn generate_person(tc: TestCase) -> Person {
          false
     };
     Person { age, name, driving_license }
+}
 ```
 
 ## Debug your failing test cases
@@ -135,12 +137,10 @@ fn generate_person(tc: TestCase) -> Person {
 Use the `note` method to attach debug information: 
 
 ```rust
-use hegel::generators::{self, Generator};
-
 #[hegel::test]
-fn test_with_notes(tc: hegel::TestCase) {
-    let x = tc.draw(generators::integers::<i64>());
-    let y = tc.draw(generators::integers::<i64>());
+fn test_with_notes(tc: TestCase) {
+    let x = tc.draw(integers::<i32>());
+    let y = tc.draw(integers::<i32>());
     tc.note(&format!("x + y = {x + y}, y + x = {y + x}"));
     assert_eq!(x + y, y + x);
 }
@@ -153,11 +153,9 @@ Notes only appear when Hegel replays the minimal failing example.
 By default Hegel runs 100 test cases. To override this, pass the `test_cases` argument to the `test` attribute:
 
 ```rust
-use hegel::generators::{self, Generator};
-
 #[hegel::test(test_cases = 500)]
-fn test_integers_many(tc: hegel::TestCase) {
-    let n = tc.draw(generators::integers::<i64>());
+fn test_integers_many(tc: TestCase) {
+    let n = tc.draw(integers::<i32>());
     assert_eq!(n, n);
 }
 ```
