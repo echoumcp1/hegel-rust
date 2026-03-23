@@ -952,7 +952,6 @@ fn run_test_case<F: FnMut(TestCase)>(
         };
         tc.send_mark_complete(&mark_complete);
     }
-
 }
 
 /// Extract a message from a panic payload.
