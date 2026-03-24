@@ -34,7 +34,16 @@ fn test_addition_commutative(tc: TestCase) {
 }
 ```
 
-Note that this test will fail! Addition panics on overflow. For a passing test, try:
+This test will fail! Integer addition panics on overflow. Hegel will produce a minimal failing test case for us:
+
+```
+Draw 1: 1
+Draw 2: 2147483647
+thread 'test_addition_commutative' (2) panicked at examples/readme.rs:8:16:
+attempt to add with overflow
+```
+
+For a passing test, try:
 
 ```rust
 #[hegel::test]
