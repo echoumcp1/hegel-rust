@@ -59,5 +59,4 @@ pub use tuples::{
 };
 
 #[cfg(feature = "rand")]
-#[cfg_attr(docsrs, doc(cfg(feature = "rand")))]
 pub use random::{HegelRandom, RandomsGenerator, randoms};
