@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.16 - 2026-03-24
+
+Better error message for when `uv` is not found on the PATH.
+
 ## 0.1.15 - 2026-03-23
 
 Add `#[hegel::state_machine]` for defining stateful tests.
