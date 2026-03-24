@@ -1,213 +1,185 @@
-//! Hegel is a property-based testing framework for Rust.
+//! # Getting started with Hegel for Rust
 //!
-//! # Quick Start
+//! This guide walks you through the basics of installing Hegel and writing your first tests.
+//!
+//! ## Prerequisites
+//!
+//! You will need [`uv`](https://docs.astral.sh/uv/) installed and on your PATH.
+//!
+//! ## Install Hegel
+//!
+//! Add `hegel-rust` to your `Cargo.toml` as a dev dependency:
+//!
+//! ```toml
+//! [dev-dependencies]
+//! hegeltest = "0.1.0"
+//! ```
+//!
+//! ## Write your first test
+//!
+//! You're now ready to write your first test. We'll use Cargo as a test runner for the
+//! purposes of this guide. Create a new test in the project's `tests/` directory:
 //!
 //! ```no_run
-//! use hegel::generators;
+//! use hegel::TestCase;
+//! use hegel::generators::integers;
 //!
 //! #[hegel::test]
-//! fn test_addition_commutative(tc: hegel::TestCase) {
-//!     let x = tc.draw(generators::integers::<i32>());
-//!     let y = tc.draw(generators::integers::<i32>());
+//! fn test_integer_self_equality(tc: TestCase) {
+//!     let n = tc.draw(integers::<i32>());
+//!     assert_eq!(n, n); // integers should always be equal to themselves
+//! }
+//! ```
+//!
+//! Now run the test using `cargo test --test <filename>`. You should see that this test passes.
+//!
+//! Let's look at what's happening in more detail. The `#[hegel::test]` attribute runs your test
+//! many times (100, by default). The test function (in this case `test_integer_self_equality`)
+//! takes a [`TestCase`] parameter, which provides a [`draw`](TestCase::draw) method for drawing
+//! different values. This test draws a random integer and checks that it should be equal to itself.
+//!
+//! Next, try a test that fails:
+//!
+//! ```no_run
+//! # use hegel::TestCase;
+//! # use hegel::generators::integers;
+//! #[hegel::test]
+//! fn test_integers_always_below_50(tc: TestCase) {
+//!     let n = tc.draw(integers::<i32>());
+//!     assert!(n < 50); // this will fail!
+//! }
+//! ```
+//!
+//! This test asserts that any integer is less than 50, which is obviously incorrect. Hegel will
+//! find a test case that makes this assertion fail, and then shrink it to find the smallest
+//! counterexample — in this case, `n = 50`.
+//!
+//! To fix this test, you can constrain the integers you generate with the `min_value` and
+//! `max_value` functions:
+//!
+//! ```no_run
+//! # use hegel::TestCase;
+//! # use hegel::generators::integers;
+//! #[hegel::test]
+//! fn test_bounded_integers_always_below_50(tc: TestCase) {
+//!     let n = tc.draw(integers::<i32>()
+//!         .min_value(0)
+//!         .max_value(49));
+//!     assert!(n < 50);
+//! }
+//! ```
+//!
+//! Run the test again. It should now pass.
+//!
+//! ## Use generators
+//!
+//! Hegel provides a rich library of generators that you can use out of the box. There are
+//! primitive generators, such as [`integers`](generators::integers),
+//! [`floats`](generators::floats), and [`text`](generators::text), and combinators that allow
+//! you to make generators out of other generators, such as [`vecs`](generators::vecs) and
+//! `tuples`.
+//!
+//! For example, you can use [`vecs`](generators::vecs) to generate a vector of integers:
+//!
+//! ```no_run
+//! # use hegel::TestCase;
+//! use hegel::generators::{integers, vecs};
+//!
+//! #[hegel::test]
+//! fn test_append_increases_length(tc: TestCase) {
+//!     let mut vector = tc.draw(vecs(integers::<i32>()));
+//!     let initial_length = vector.len();
+//!     vector.push(tc.draw(integers::<i32>()));
+//!     assert!(vector.len() > initial_length);
+//! }
+//! ```
+//!
+//! This test checks that appending an element to a random vector of integers should always
+//! increase its length.
+//!
+//! You can also define custom generators. For example, say you have a `Person` struct that
+//! we want to generate:
+//!
+//! ```no_run
+//! # use hegel::TestCase;
+//! # use hegel::generators::{integers, text};
+//! #[derive(Debug)]
+//! struct Person {
+//!     age: i32,
+//!     name: String,
+//! }
+//!
+//! #[hegel::composite]
+//! fn generate_person(tc: TestCase) -> Person {
+//!     let age = tc.draw(integers::<i32>());
+//!     let name = tc.draw(text());
+//!     Person { age, name }
+//! }
+//! ```
+//!
+//! Note that you can feed the results of a `draw` to subsequent calls. For example, say that
+//! you extend the `Person` struct to include a `driving_license` boolean field:
+//!
+//! ```no_run
+//! # use hegel::TestCase;
+//! # use hegel::generators::{integers, text, booleans};
+//! #[derive(Debug)]
+//! struct Person {
+//!     age: i32,
+//!     name: String,
+//!     driving_license: bool,
+//! }
+//!
+//! #[hegel::composite]
+//! fn generate_person(tc: TestCase) -> Person {
+//!     let age = tc.draw(integers::<i32>());
+//!     let name = tc.draw(text());
+//!     let driving_license = if age >= 18 {
+//!         tc.draw(booleans())
+//!     } else {
+//!          false
+//!     };
+//!     Person { age, name, driving_license }
+//! }
+//! ```
+//!
+//! ## Debug your failing test cases
+//!
+//! Use the [`note`](TestCase::note) method to attach debug information:
+//!
+//! ```no_run
+//! # use hegel::TestCase;
+//! # use hegel::generators::integers;
+//! #[hegel::test]
+//! fn test_with_notes(tc: TestCase) {
+//!     let x = tc.draw(integers::<i32>());
+//!     let y = tc.draw(integers::<i32>());
+//!     tc.note(&format!("x + y = {}, y + x = {}", x + y, y + x));
 //!     assert_eq!(x + y, y + x);
 //! }
 //! ```
 //!
-//! # Configuration
+//! Notes only appear when Hegel replays the minimal failing example.
 //!
-//! Use attributes for more control:
+//! ## Change the number of test cases
 //!
-//! ```no_run
-//! use hegel::Verbosity;
-//! use hegel::generators;
-//!
-//! #[hegel::test(test_cases = 500, verbosity = Verbosity::Verbose)]
-//! fn test_with_options(tc: hegel::TestCase) {
-//!     let n = tc.draw(generators::integers::<i32>());
-//!     assert!(n + 0 == n);
-//! }
-//! ```
-//!
-//! # Generators
-//!
-//! All generators implement [`generators::Generator<T>`] and are created via factory functions
-//! in the [`generators`] module.
-//!
-//! ## Primitives
+//! By default Hegel runs 100 test cases. To override this, pass the `test_cases` argument
+//! to the `test` attribute:
 //!
 //! ```no_run
-//! use hegel::generators;
-//!
-//! #[hegel::test]
-//! fn my_test(tc: hegel::TestCase) {
-//!     let _: () = tc.draw(generators::unit());
-//!     let b: bool = tc.draw(generators::booleans());
-//!     let n: i32 = tc.draw(generators::just(42));  // constant with schema
+//! # use hegel::TestCase;
+//! # use hegel::generators::integers;
+//! #[hegel::test(test_cases = 500)]
+//! fn test_integers_many(tc: TestCase) {
+//!     let n = tc.draw(integers::<i32>());
+//!     assert_eq!(n, n);
 //! }
 //! ```
 //!
-//! ## Numbers
+//! ## Learning more
 //!
-//! ```no_run
-//! use hegel::generators;
-//!
-//! #[hegel::test]
-//! fn my_test(tc: hegel::TestCase) {
-//!     // Integers - bounds default to type limits
-//!     let i: i32 = tc.draw(generators::integers::<i32>());
-//!     let bounded: i32 = tc.draw(generators::integers().min_value(0).max_value(100));
-//!
-//!     // Floating point
-//!     let f: f64 = tc.draw(generators::floats::<f64>());
-//!     let bounded: f64 = tc.draw(generators::floats()
-//!         .min_value(0.0)
-//!         .max_value(1.0)
-//!         .exclude_min()
-//!         .exclude_max());
-//! }
-//! ```
-//!
-//! ## Strings
-//!
-//! ```no_run
-//! use hegel::generators;
-//!
-//! #[hegel::test]
-//! fn my_test(tc: hegel::TestCase) {
-//!     let s: String = tc.draw(generators::text());
-//!     let bounded: String = tc.draw(generators::text().min_size(1).max_size(100));
-//!
-//!     // Regex patterns (auto-anchored)
-//!     let pattern: String = tc.draw(generators::from_regex(r"[a-z]{3}-[0-9]{3}"));
-//!
-//!     // Format strings
-//!     let email: String = tc.draw(generators::emails());
-//!     let url: String = tc.draw(generators::urls());
-//!     let ip: String = tc.draw(generators::ip_addresses().v4());
-//!     let date: String = tc.draw(generators::dates());  // YYYY-MM-DD
-//! }
-//! ```
-//!
-//! ## Collections
-//!
-//! ```no_run
-//! use hegel::generators;
-//! use std::collections::{HashSet, HashMap};
-//!
-//! #[hegel::test]
-//! fn my_test(tc: hegel::TestCase) {
-//!     let vec: Vec<i32> = tc.draw(generators::vecs(generators::integers()).min_size(1));
-//!     let set: HashSet<i32> = tc.draw(generators::hashsets(generators::integers()));
-//!     let map: HashMap<String, i32> = tc.draw(generators::hashmaps(generators::text(), generators::integers()));
-//! }
-//! ```
-//!
-//! ## Combinators
-//!
-//! ```no_run
-//! use hegel::generators;
-//!
-//! #[hegel::test]
-//! fn my_test(tc: hegel::TestCase) {
-//!     // Sample from a fixed set
-//!     let color: &str = tc.draw(generators::sampled_from(vec!["red", "green", "blue"]));
-//!
-//!     // Choose from multiple generators
-//!     let n: i32 = tc.draw(hegel::one_of!(
-//!         generators::integers::<i32>().min_value(0).max_value(10),
-//!         generators::integers::<i32>().min_value(100).max_value(110),
-//!     ));
-//!
-//!     // Optional values
-//!     let opt: Option<i32> = tc.draw(generators::optional(generators::integers()));
-//! }
-//! ```
-//!
-//! ## Transformations
-//!
-//! ```no_run
-//! use hegel::generators::{self, Generator};
-//!
-//! #[hegel::test]
-//! fn my_test(tc: hegel::TestCase) {
-//!     // Transform values
-//!     let squared: i32 = tc.draw(generators::integers::<i32>()
-//!         .min_value(1)
-//!         .max_value(10)
-//!         .map(|x| x * x));
-//!
-//!     // Filter values
-//!     let even: i32 = tc.draw(generators::integers::<i32>()
-//!         .filter(|x| x % 2 == 0));
-//!
-//!     // Dependent generation
-//!     let sized: String = tc.draw(generators::integers::<usize>()
-//!         .min_value(1)
-//!         .max_value(10)
-//!         .flat_map(|len| generators::text().min_size(len).max_size(len)));
-//! }
-//! ```
-//!
-//! # Deriving Generators
-//!
-//! Use `#[derive(DefaultGenerator)]` to automatically create generators for structs and enums,
-//! then use [`generators::default`] to get a generator:
-//!
-//! ```no_run
-//! use hegel::DefaultGenerator;
-//! use hegel::generators;
-//!
-//! #[derive(DefaultGenerator, Debug)]
-//! struct Person {
-//!     name: String,
-//!     age: u32,
-//! }
-//!
-//! #[hegel::test]
-//! fn my_test(tc: hegel::TestCase) {
-//!     // Generate with defaults
-//!     let person: Person = tc.draw(generators::default::<Person>());
-//!
-//!     // Customize field generators
-//!     let person: Person = tc.draw(generators::default::<Person>()
-//!         .age(generators::integers().min_value(0).max_value(120)));
-//! }
-//! ```
-//!
-//! For external types, use [`derive_generator!`]:
-//!
-//! ```ignore
-//! use hegel::derive_generator;
-//! use hegel::generators;
-//!
-//! derive_generator!(Point { x: f64, y: f64 });
-//!
-//! let point: Point = tc.draw(generators::default::<Point>());
-//! ```
-//!
-//! # Assumptions
-//!
-//! Use [`TestCase::assume`] to reject invalid test inputs:
-//!
-//! ```no_run
-//! use hegel::generators;
-//!
-//! #[hegel::test]
-//! fn my_test(tc: hegel::TestCase) {
-//!     let age: u32 = tc.draw(generators::integers());
-//!     tc.assume(age >= 18);
-//!     // Test logic for adults only...
-//! }
-//! ```
-//!
-//! # Feature Flags
-//!
-//! - **`rand`**: Enables [`generators::randoms()`] for generating random number generators
-//!   that implement [`rand::RngCore`].
-//!
-//! # Debugging
-//!
-//! Set verbosity to [`Verbosity::Debug`] to enable debug logging of requests/responses.
+//! - Browse the [`generators`] module for the full list of available generators.
+//! - See [`Settings`] for more configuration settings to customise how your test runs.
 
 #![forbid(future_incompatible)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -221,6 +193,7 @@ pub(crate) mod runner;
 pub mod stateful;
 mod test_case;
 
+#[doc(hidden)]
 pub use control::currently_in_test_context;
 pub use generators::Generator;
 pub use test_case::TestCase;
@@ -240,4 +213,6 @@ pub use hegel_macros::DefaultGenerator;
 pub use hegel_macros::composite;
 pub use hegel_macros::state_machine;
 pub use hegel_macros::test;
-pub use runner::{HealthCheck, Hegel, Settings, Verbosity, hegel};
+#[doc(hidden)]
+pub use runner::hegel;
+pub use runner::{HealthCheck, Hegel, Settings, Verbosity};
