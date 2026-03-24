@@ -133,15 +133,15 @@ impl<T> FloatGenerator<T> {
         self
     }
 
-    /// Exclude the minimum value from the range.
-    pub fn exclude_min(mut self) -> Self {
-        self.exclude_min = true;
+    /// Set whether to exclude the minimum value from the range.
+    pub fn exclude_min(mut self, exclude_min: bool) -> Self {
+        self.exclude_min = exclude_min;
         self
     }
 
-    /// Exclude the maximum value from the range.
-    pub fn exclude_max(mut self) -> Self {
-        self.exclude_max = true;
+    /// Set whether to exclude the maximum value from the range.
+    pub fn exclude_max(mut self, exclude_max: bool) -> Self {
+        self.exclude_max = exclude_max;
         self
     }
 

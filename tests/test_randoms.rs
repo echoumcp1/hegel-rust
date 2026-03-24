@@ -44,7 +44,7 @@ fn test_randoms_fill(tc: TestCase) {
 
 #[hegel::test]
 fn test_true_random(tc: TestCase) {
-    let mut rng = tc.draw(randoms().use_true_random());
+    let mut rng = tc.draw(randoms().use_true_random(true));
     let x: i32 = rng.random_range(1..=100);
     assert!((1..=100).contains(&x));
 }
@@ -61,12 +61,12 @@ fn test_randoms_u64(tc: TestCase) {
 
 #[hegel::test]
 fn test_true_randoms_u64(tc: TestCase) {
-    let _: u64 = tc.draw(randoms().use_true_random()).random();
+    let _: u64 = tc.draw(randoms().use_true_random(true)).random();
 }
 
 #[hegel::test]
 fn test_true_randoms_fill(tc: TestCase) {
-    let mut rng = tc.draw(randoms().use_true_random());
+    let mut rng = tc.draw(randoms().use_true_random(true));
     let mut bytes = [0u8; 16];
     rng.fill(&mut bytes);
 }

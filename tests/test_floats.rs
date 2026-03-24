@@ -64,7 +64,7 @@ macro_rules! float_tests {
                     .allow_infinity(false),
             );
             tc.assume(min.next_up().is_finite());
-            let n = tc.draw(generators::floats::<$t>().min_value(min).exclude_min());
+            let n = tc.draw(generators::floats::<$t>().min_value(min).exclude_min(true));
             assert!(n > min, "{n} should be > {min}");
         }
 
@@ -76,7 +76,7 @@ macro_rules! float_tests {
                     .allow_infinity(false),
             );
             tc.assume(max.next_down().is_finite());
-            let n = tc.draw(generators::floats::<$t>().max_value(max).exclude_max());
+            let n = tc.draw(generators::floats::<$t>().max_value(max).exclude_max(true));
             assert!(n < max, "{n} should be < {max}");
         }
 
@@ -99,8 +99,8 @@ macro_rules! float_tests {
                 &generators::floats::<$t>()
                     .min_value(min)
                     .max_value(max)
-                    .exclude_min()
-                    .exclude_max(),
+                    .exclude_min(true)
+                    .exclude_max(true),
             );
             assert!(n > min && n < max, "{n} should be in ({min}, {max})");
         }
@@ -158,12 +158,8 @@ macro_rules! float_tests {
             if let Some(hi) = high {
                 g = g.max_value(hi);
             }
-            if exmin {
-                g = g.exclude_min();
-            }
-            if exmax {
-                g = g.exclude_max();
-            }
+            g = g.exclude_min(exmin);
+            g = g.exclude_max(exmax);
 
             let val = tc.draw(g);
 

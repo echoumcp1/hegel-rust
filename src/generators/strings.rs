@@ -69,9 +69,9 @@ pub struct RegexGenerator {
 }
 
 impl RegexGenerator {
-    /// Require the entire string to match the pattern, not just contain a match.
-    pub fn fullmatch(mut self) -> Self {
-        self.fullmatch = true;
+    /// Set whether the entire string must match the pattern, not just contain a match.
+    pub fn fullmatch(mut self, fullmatch: bool) -> Self {
+        self.fullmatch = fullmatch;
         self
     }
 

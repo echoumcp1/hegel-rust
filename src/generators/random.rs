@@ -13,11 +13,11 @@ pub struct RandomsGenerator {
 }
 
 impl RandomsGenerator {
-    /// Use a seeded `StdRng` instead of test-case-backed randomness.
+    /// Set whether to use a seeded `StdRng` instead of test-case-backed randomness.
     ///
     /// True random values are not shrinkable.
-    pub fn use_true_random(mut self) -> Self {
-        self.use_true_random = true;
+    pub fn use_true_random(mut self, use_true_random: bool) -> Self {
+        self.use_true_random = use_true_random;
         self
     }
 }

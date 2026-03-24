@@ -42,12 +42,8 @@ fn main() {
         if let Some(max) = params.max_value {
             g = g.max_value(max);
         }
-        if params.exclude_min {
-            g = g.exclude_min();
-        }
-        if params.exclude_max {
-            g = g.exclude_max();
-        }
+        g = g.exclude_min(params.exclude_min);
+        g = g.exclude_max(params.exclude_max);
         if let Some(allow_nan) = params.allow_nan {
             g = g.allow_nan(allow_nan);
         }
