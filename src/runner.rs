@@ -49,9 +49,10 @@ static PANIC_HOOK_INIT: Once = Once::new();
 struct HegelSession {
     _temp_dir: TempDir,
     connection: Arc<Connection>,
-    /// Serializes all test execution. The protocol's stream-level locking
-    /// doesn't support concurrent readers on different channels, so only
-    /// one test can use the connection at a time.
+    /// The control channel is shared across threads, so it's behind a Mutex
+    /// because Channel is not thread-safe. The lock is only held for the
+    /// brief run_test send/receive; test execution runs concurrently on
+    /// per-test channels.
     control: Mutex<Channel>,
 }
 
