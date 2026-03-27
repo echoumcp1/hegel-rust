@@ -672,9 +672,15 @@ where
         let result_data: Value;
         let ack_null = cbor_map! {"result" => Value::Null};
         loop {
-            let (event_id, event_payload) = test_channel
-                .receive_request()
-                .expect("Failed to receive event");
+            // Handle the server dying between events: receive_request will
+            // fail with RecvError once the background reader clears the senders.
+            let (event_id, event_payload) = match test_channel.receive_request() {
+                Ok(event) => event,
+                Err(_) if connection.server_has_exited() => {
+                    panic!("{}", SERVER_CRASHED_MESSAGE);
+                }
+                Err(e) => unreachable!("Failed to receive event (server still running): {}", e),
+            };
 
             let event: Value = cbor_decode(&event_payload);
             let event_type = map_get(&event, "event")
@@ -706,10 +712,6 @@ where
                         verbosity,
                         &got_interesting,
                     );
-
-                    if connection.server_has_exited() {
-                        panic!("{}", SERVER_CRASHED_MESSAGE);
-                    }
                 }
                 "test_done" => {
                     let ack_true = cbor_map! {"result" => true};

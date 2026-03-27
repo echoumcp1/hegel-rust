@@ -44,6 +44,9 @@ impl Connection {
                     Err(_) => {
                         // Stream closed or error — mark server as exited and stop.
                         conn_for_reader.server_exited.store(true, Ordering::SeqCst);
+                        // Drop all senders so any thread blocked on channel.recv()
+                        // unblocks with RecvError instead of hanging forever.
+                        conn_for_reader.channel_senders.lock().unwrap().clear();
                         break;
                     }
                 }
@@ -70,7 +73,16 @@ impl Connection {
 
     fn register_channel(self: &Arc<Self>, channel_id: u32) -> Channel {
         let (tx, rx) = mpsc::channel();
-        self.channel_senders.lock().unwrap().insert(channel_id, tx);
+        let mut senders = self.channel_senders.lock().unwrap();
+        senders.insert(channel_id, tx);
+        // If the server already exited, the background reader's clear() either
+        // already ran (so our insert is orphaned) or is blocked on this lock
+        // (and will clear it). Remove the sender now so recv() unblocks
+        // immediately with RecvError.
+        if self.server_has_exited() {
+            senders.remove(&channel_id);
+        }
+        drop(senders);
         Channel::new(channel_id, Arc::clone(self), rx)
     }
 
@@ -100,5 +112,32 @@ impl Connection {
             Err(_) if self.server_has_exited() => Err(Self::server_crashed_error()),
             Err(e) => Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::net::UnixStream;
+
+    /// Verify that when the reader stream closes (simulating server crash),
+    /// channels unblock promptly instead of hanging forever.
+    #[test]
+    fn test_channel_unblocks_on_reader_close() {
+        // Create a connection whose reader returns EOF immediately.
+        // This simulates the server process dying.
+        let (_, write_end) = UnixStream::pair().unwrap();
+        let conn = Connection::new(Box::new(std::io::empty()), Box::new(write_end));
+
+        // Wait for the background reader to detect EOF
+        while !conn.server_has_exited() {
+            std::thread::yield_now();
+        }
+
+        // Channel created AFTER server exit must still unblock, not hang.
+        let mut channel = conn.new_channel();
+
+        let result = channel.receive_request();
+        assert!(result.is_err());
     }
 }
