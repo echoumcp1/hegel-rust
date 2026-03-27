@@ -167,7 +167,7 @@ fn test_list_with_wide_gap() {
         let max = *x.iter().max().unwrap();
         let min = *x.iter().min().unwrap();
         min.checked_add(10)
-                .is_some_and(|min_plus_10| max > min_plus_10 && min_plus_10 > 0)
+            .is_some_and(|min_plus_10| max > min_plus_10 && min_plus_10 > 0)
     });
     assert_eq!(xs.len(), 2);
     let mut sorted = xs.clone();
