@@ -28,6 +28,7 @@ pub fn expand_state_machine(mut block: ItemImpl) -> TokenStream {
     }
 
     let block_type = &block.self_ty;
+    let (impl_generics, _, where_clause) = block.generics.split_for_impl();
 
     let rule_name_strings: Vec<String> = rule_names.iter().map(|id| id.to_string()).collect();
     let invariant_name_strings: Vec<String> =
@@ -35,7 +36,7 @@ pub fn expand_state_machine(mut block: ItemImpl) -> TokenStream {
 
     quote! {
         #block
-        impl ::hegel::stateful::StateMachine for #block_type {
+        impl #impl_generics ::hegel::stateful::StateMachine for #block_type #where_clause {
             fn rules(&self) -> Vec<::hegel::stateful::Rule<Self>> {
                 vec![ #( ::hegel::stateful::Rule::new(#rule_name_strings, Self::#rule_names) ),* ]
             }
