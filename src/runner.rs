@@ -1,18 +1,18 @@
 use crate::antithesis::{TestLocation, is_running_in_antithesis};
-use crate::backend::ServerBackend;
+use crate::backend::{Backend, StopTestError, TestCaseResult, TestRunResult, TestRunner};
+use crate::cbor_utils::{as_bool, as_text, as_u64, cbor_map, map_get, map_insert};
 use crate::control::{currently_in_test_context, with_test_context};
 use crate::protocol::{Connection, HANDSHAKE_STRING, SERVER_CRASHED_MESSAGE, Stream};
 use crate::test_case::{ASSUME_FAIL_STRING, STOP_TEST_STRING, TestCase};
 use ciborium::Value;
 
-use crate::cbor_utils::{as_bool, as_text, as_u64, cbor_map, map_get};
 use std::backtrace::{Backtrace, BacktraceStatus};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fs::{File, OpenOptions};
 use std::panic::{self, AssertUnwindSafe, catch_unwind};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, Once};
+use std::sync::{Arc, LazyLock, Mutex, Once};
 use std::time::{Duration, Instant};
 
 const SUPPORTED_PROTOCOL_VERSIONS: (f64, f64) = (0.8, 0.8);
@@ -24,6 +24,207 @@ static LOG_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 static SESSION: std::sync::OnceLock<HegelSession> = std::sync::OnceLock::new();
 
 static PANIC_HOOK_INIT: Once = Once::new();
+
+// ─── ServerBackend ──────────────────────────────────────────────────────────
+
+static PROTOCOL_DEBUG: LazyLock<bool> = LazyLock::new(|| {
+    matches!(
+        std::env::var("HEGEL_PROTOCOL_DEBUG")
+            .unwrap_or_default()
+            .to_lowercase()
+            .as_str(),
+        "1" | "true"
+    )
+});
+
+/// Backend implementation that communicates with the hegel-core server
+/// over a multiplexed stream.
+pub(crate) struct ServerBackend {
+    connection: Arc<Connection>,
+    stream: RefCell<Stream>,
+    aborted: Cell<bool>,
+    verbosity: Verbosity,
+}
+
+impl ServerBackend {
+    pub(crate) fn new(connection: Arc<Connection>, stream: Stream, verbosity: Verbosity) -> Self {
+        ServerBackend {
+            connection,
+            stream: RefCell::new(stream),
+            aborted: Cell::new(false),
+            verbosity,
+        }
+    }
+
+    fn send_request(&self, command: &str, payload: &Value) -> Result<Value, StopTestError> {
+        if self.aborted.get() {
+            return Err(StopTestError);
+        }
+        let debug = *PROTOCOL_DEBUG || self.verbosity == Verbosity::Debug;
+
+        let mut entries = vec![(
+            Value::Text("command".to_string()),
+            Value::Text(command.to_string()),
+        )];
+
+        if let Value::Map(map) = payload {
+            for (k, v) in map {
+                entries.push((k.clone(), v.clone()));
+            }
+        }
+
+        let request = Value::Map(entries);
+
+        if debug {
+            eprintln!("REQUEST: {:?}", request);
+        }
+
+        let result = self.stream.borrow_mut().request_cbor(&request);
+
+        match result {
+            Ok(response) => {
+                if debug {
+                    eprintln!("RESPONSE: {:?}", response);
+                }
+                Ok(response)
+            }
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("overflow")
+                    || error_msg.contains("StopTest")
+                    || error_msg.contains("stream is closed")
+                {
+                    if debug {
+                        eprintln!("RESPONSE: StopTest/overflow");
+                    }
+                    self.stream.borrow_mut().mark_closed();
+                    self.aborted.set(true);
+                    Err(StopTestError)
+                } else if error_msg.contains("FlakyStrategyDefinition")
+                    || error_msg.contains("FlakyReplay")
+                {
+                    self.stream.borrow_mut().mark_closed();
+                    self.aborted.set(true);
+                    Err(StopTestError)
+                } else if self.connection.server_has_exited() {
+                    panic!("{}", SERVER_CRASHED_MESSAGE);
+                } else {
+                    panic!("Failed to communicate with Hegel: {}", e);
+                }
+            }
+        }
+    }
+}
+
+impl Backend for ServerBackend {
+    fn generate(&self, schema: &Value) -> Result<Value, StopTestError> {
+        self.send_request("generate", &cbor_map! {"schema" => schema.clone()})
+    }
+
+    fn start_span(&self, label: u64) -> Result<(), StopTestError> {
+        self.send_request("start_span", &cbor_map! {"label" => label})?;
+        Ok(())
+    }
+
+    fn stop_span(&self, discard: bool) -> Result<(), StopTestError> {
+        self.send_request("stop_span", &cbor_map! {"discard" => discard})?;
+        Ok(())
+    }
+
+    fn new_collection(
+        &self,
+        name: &str,
+        min_size: u64,
+        max_size: Option<u64>,
+    ) -> Result<String, StopTestError> {
+        let mut payload = cbor_map! {
+            "name" => name,
+            "min_size" => min_size
+        };
+        if let Some(max) = max_size {
+            map_insert(&mut payload, "max_size", max);
+        }
+        let response = self.send_request("new_collection", &payload)?;
+        match response {
+            Value::Text(s) => Ok(s),
+            _ => panic!(
+                "Expected text response from new_collection, got {:?}",
+                response
+            ),
+        }
+    }
+
+    fn collection_more(&self, collection: &str) -> Result<bool, StopTestError> {
+        let response =
+            self.send_request("collection_more", &cbor_map! { "collection" => collection })?;
+        match response {
+            Value::Bool(b) => Ok(b),
+            _ => panic!("Expected bool from collection_more, got {:?}", response),
+        }
+    }
+
+    fn collection_reject(&self, collection: &str, why: Option<&str>) -> Result<(), StopTestError> {
+        let mut payload = cbor_map! {
+            "collection" => collection
+        };
+        if let Some(reason) = why {
+            map_insert(&mut payload, "why", reason.to_string());
+        }
+        self.send_request("collection_reject", &payload)?;
+        Ok(())
+    }
+
+    fn new_pool(&self) -> Result<i128, StopTestError> {
+        let response = self.send_request("new_pool", &cbor_map! {})?;
+        match response {
+            Value::Integer(i) => Ok(i.into()),
+            other => panic!("Expected integer response for pool id, got {:?}", other),
+        }
+    }
+
+    fn pool_add(&self, pool_id: i128) -> Result<i128, StopTestError> {
+        let response = self.send_request("pool_add", &cbor_map! {"pool_id" => pool_id})?;
+        match response {
+            Value::Integer(i) => Ok(i.into()),
+            other => panic!("Expected integer response for variable id, got {:?}", other),
+        }
+    }
+
+    fn pool_generate(&self, pool_id: i128, consume: bool) -> Result<i128, StopTestError> {
+        let response = self.send_request(
+            "pool_generate",
+            &cbor_map! {
+                "pool_id" => pool_id,
+                "consume" => consume,
+            },
+        )?;
+        match response {
+            Value::Integer(i) => Ok(i.into()),
+            other => panic!("Expected integer response for variable id, got {:?}", other),
+        }
+    }
+
+    fn mark_complete(&self, status: &str, origin: Option<&str>) {
+        let origin_value = match origin {
+            Some(s) => Value::Text(s.to_string()),
+            None => Value::Null,
+        };
+        let mark_complete = cbor_map! {
+            "command" => "mark_complete",
+            "status" => status,
+            "origin" => origin_value
+        };
+        let mut stream = self.stream.borrow_mut();
+        let _ = stream.request_cbor(&mark_complete);
+        let _ = stream.close();
+    }
+
+    fn test_aborted(&self) -> bool {
+        self.aborted.get()
+    }
+}
+
+// ─── HegelSession ───────────────────────────────────────────────────────────
 
 /// A persistent connection to the hegel server subprocess.
 ///
@@ -41,10 +242,7 @@ struct HegelSession {
 
 impl HegelSession {
     fn get() -> &'static HegelSession {
-        SESSION.get_or_init(|| {
-            init_panic_hook();
-            HegelSession::init()
-        })
+        SESSION.get_or_init(HegelSession::init)
     }
 
     fn init() -> HegelSession {
@@ -85,17 +283,16 @@ impl HegelSession {
         let server_version = match decoded.strip_prefix("Hegel/") {
             Some(v) => v,
             None => {
-                let _ = child.kill(); // nocov
-                panic!("Bad handshake response: {decoded:?}"); // nocov
+                let _ = child.kill();
+                panic!("Bad handshake response: {decoded:?}");
             }
         };
         let version: f64 = server_version.parse().unwrap_or_else(|_| {
-            let _ = child.kill(); // nocov
-            panic!("Bad version number: {server_version}"); // nocov
+            let _ = child.kill();
+            panic!("Bad version number: {server_version}");
         });
 
         let (lo, hi) = SUPPORTED_PROTOCOL_VERSIONS;
-        // nocov start
         if !(lo <= version && version <= hi) {
             let _ = child.kill();
             panic!(
@@ -103,7 +300,6 @@ impl HegelSession {
                  the connected server is using protocol version {version}. Upgrading \
                  hegel-rust or downgrading hegel-core might help."
             );
-            // nocov end
         }
 
         // Monitor thread: detects server crash. The pipe close from
@@ -121,6 +317,208 @@ impl HegelSession {
     }
 }
 
+// ─── ServerTestRunner ───────────────────────────────────────────────────────
+
+/// Test runner that communicates with the hegel-core server.
+pub(crate) struct ServerTestRunner;
+
+impl TestRunner for ServerTestRunner {
+    fn run(
+        &self,
+        settings: &Settings,
+        database_key: Option<&str>,
+        run_case: &mut dyn FnMut(Box<dyn Backend>, bool) -> TestCaseResult,
+    ) -> TestRunResult {
+        let session = HegelSession::get();
+        let connection = &session.connection;
+        let verbosity = settings.verbosity;
+
+        let mut test_stream = connection.new_stream();
+
+        let suppress_names: Vec<Value> = settings
+            .suppress_health_check
+            .iter()
+            .map(|c| Value::Text(c.as_str().to_string()))
+            .collect();
+
+        let database_key_bytes =
+            database_key.map_or(Value::Null, |k| Value::Bytes(k.as_bytes().to_vec()));
+
+        let mut run_test_msg = cbor_map! {
+            "command" => "run_test",
+            "test_cases" => settings.test_cases,
+            "seed" => settings.seed.map_or(Value::Null, Value::from),
+            "stream_id" => test_stream.stream_id,
+            "database_key" => database_key_bytes,
+            "derandomize" => settings.derandomize
+        };
+        let db_value = match &settings.database {
+            Database::Unset => Option::None,
+            Database::Disabled => Some(Value::Null),
+            Database::Path(s) => Some(Value::Text(s.clone())),
+        };
+        if let Some(db) = db_value {
+            if let Value::Map(ref mut map) = run_test_msg {
+                map.push((Value::Text("database".to_string()), db));
+            }
+        }
+        if !suppress_names.is_empty() {
+            if let Value::Map(ref mut map) = run_test_msg {
+                map.push((
+                    Value::Text("suppress_health_check".to_string()),
+                    Value::Array(suppress_names),
+                ));
+            }
+        }
+
+        // The control stream is behind a Mutex because Stream requires &mut self.
+        // This only serializes the brief run_test send/receive — actual test
+        // execution happens on per-test streams without holding this lock.
+        {
+            let mut control = session.control.lock().unwrap();
+            let run_test_id = control
+                .send_request(cbor_encode(&run_test_msg))
+                .expect("Failed to send run_test");
+
+            let run_test_response = control
+                .receive_reply(run_test_id)
+                .expect("Failed to receive run_test response");
+            let _run_test_result: Value = cbor_decode(&run_test_response);
+        }
+
+        if verbosity == Verbosity::Debug {
+            eprintln!("run_test response received");
+        }
+
+        let result_data: Value;
+        let ack_null = cbor_map! {"result" => Value::Null};
+        loop {
+            // Handle the server dying between events: receive_request will
+            // fail with RecvError once the background reader clears the senders.
+            let (event_id, event_payload) = match test_stream.receive_request() {
+                Ok(event) => event,
+                Err(_) if connection.server_has_exited() => {
+                    panic!("{}", SERVER_CRASHED_MESSAGE);
+                }
+                Err(e) => unreachable!("Failed to receive event (server still running): {}", e),
+            };
+
+            let event: Value = cbor_decode(&event_payload);
+            let event_type = map_get(&event, "event")
+                .and_then(as_text)
+                .expect("Expected event in payload");
+
+            if verbosity == Verbosity::Debug {
+                eprintln!("Received event: {:?}", event);
+            }
+
+            match event_type {
+                "test_case" => {
+                    let stream_id = map_get(&event, "stream_id")
+                        .and_then(as_u64)
+                        .expect("Missing stream id") as u32;
+
+                    let test_case_stream = connection.connect_stream(stream_id);
+
+                    // Ack the test_case event BEFORE running the test (prevents deadlock)
+                    test_stream
+                        .write_reply(event_id, cbor_encode(&ack_null))
+                        .expect("Failed to ack test_case");
+
+                    let backend = Box::new(ServerBackend::new(
+                        Arc::clone(connection),
+                        test_case_stream,
+                        verbosity,
+                    ));
+                    run_case(backend, false);
+                }
+                "test_done" => {
+                    let ack_true = cbor_map! {"result" => true};
+                    test_stream
+                        .write_reply(event_id, cbor_encode(&ack_true))
+                        .expect("Failed to ack test_done");
+                    result_data = map_get(&event, "results").cloned().unwrap_or(Value::Null);
+                    break;
+                }
+                _ => {
+                    panic!("unknown event: {}", event_type);
+                }
+            }
+        }
+
+        // Check for server-side errors before processing results
+        if let Some(error_msg) = map_get(&result_data, "error").and_then(as_text) {
+            panic!("Server error: {}", error_msg);
+        }
+
+        // Check for health check failure before processing results
+        if let Some(failure_msg) = map_get(&result_data, "health_check_failure").and_then(as_text) {
+            panic!("Health check failure:\n{}", failure_msg);
+        }
+
+        // Check for flaky test detection
+        if let Some(flaky_msg) = map_get(&result_data, "flaky").and_then(as_text) {
+            panic!("Flaky test detected: {}", flaky_msg);
+        }
+
+        let n_interesting = map_get(&result_data, "interesting_test_cases")
+            .and_then(as_u64)
+            .unwrap_or(0);
+
+        if verbosity == Verbosity::Debug {
+            eprintln!("Test done. interesting_test_cases={}", n_interesting);
+        }
+
+        // Process final replay test cases (one per interesting example)
+        let mut failure_message: Option<String> = None;
+        for _ in 0..n_interesting {
+            let (event_id, event_payload) = test_stream
+                .receive_request()
+                .expect("Failed to receive final test_case");
+
+            let event: Value = cbor_decode(&event_payload);
+            let event_type = map_get(&event, "event").and_then(as_text);
+            assert_eq!(event_type, Some("test_case"));
+
+            let stream_id = map_get(&event, "stream_id")
+                .and_then(as_u64)
+                .expect("Missing stream id") as u32;
+
+            let test_case_stream = connection.connect_stream(stream_id);
+
+            test_stream
+                .write_reply(event_id, cbor_encode(&ack_null))
+                .expect("Failed to ack final test_case");
+
+            let backend = Box::new(ServerBackend::new(
+                Arc::clone(connection),
+                test_case_stream,
+                verbosity,
+            ));
+            let tc_result = run_case(backend, true);
+
+            if let TestCaseResult::Interesting { panic_message } = tc_result {
+                failure_message = Some(panic_message);
+            }
+
+            if connection.server_has_exited() {
+                panic!("{}", SERVER_CRASHED_MESSAGE);
+            }
+        }
+
+        let passed = map_get(&result_data, "passed")
+            .and_then(as_bool)
+            .unwrap_or(true);
+
+        TestRunResult {
+            passed,
+            failure_message,
+        }
+    }
+}
+
+// ─── Panic hook and backtrace ───────────────────────────────────────────────
+
 thread_local! {
     /// (thread_name, thread_id, location, backtrace)
     static LAST_PANIC_INFO: RefCell<Option<(String, String, String, Backtrace)>> = const { RefCell::new(None) };
@@ -136,7 +534,6 @@ fn take_panic_info() -> Option<(String, String, String, Backtrace)> {
 /// Short format shows only frames between `__rust_end_short_backtrace` and
 /// `__rust_begin_short_backtrace` markers, matching the default Rust panic handler.
 /// Frame numbers are renumbered to start at 0.
-// nocov start
 fn format_backtrace(bt: &Backtrace, full: bool) -> String {
     let backtrace_str = format!("{}", bt);
 
@@ -223,7 +620,6 @@ fn format_backtrace(bt: &Backtrace, full: bool) -> String {
 
     result.join("\n")
 }
-// nocov end
 
 // Panic unconditionally prints to stderr, even if it's caught later. This results in
 // messy output during shrinking. To avoid this, we replace the panic hook with our
@@ -409,6 +805,8 @@ fn resolve_hegel_path(path: &str) -> String {
     );
 }
 
+// ─── Public types ───────────────────────────────────────────────────────────
+
 /// Health checks that can be suppressed during test execution.
 ///
 /// Health checks detect common issues with test configuration that would
@@ -472,43 +870,6 @@ pub enum Verbosity {
 
 impl Verbosity {}
 
-// internal use only
-#[doc(hidden)]
-pub fn hegel<F>(test_fn: F)
-where
-    F: FnMut(TestCase),
-{
-    Hegel::new(test_fn).run();
-}
-
-fn is_in_ci() -> bool {
-    const CI_VARS: &[(&str, Option<&str>)] = &[
-        ("CI", None),
-        ("TF_BUILD", Some("true")),
-        ("BUILDKITE", Some("true")),
-        ("CIRCLECI", Some("true")),
-        ("CIRRUS_CI", Some("true")),
-        ("CODEBUILD_BUILD_ID", None),
-        ("GITHUB_ACTIONS", Some("true")),
-        ("GITLAB_CI", None),
-        ("HEROKU_TEST_RUN_ID", None),
-        ("TEAMCITY_VERSION", None),
-        ("bamboo.buildKey", None),
-    ];
-
-    CI_VARS.iter().any(|(key, value)| match value {
-        None => std::env::var_os(key).is_some(),
-        Some(expected) => std::env::var(key).ok().as_deref() == Some(expected), // nocov
-    })
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Database {
-    Unset,
-    Disabled,
-    Path(String),
-}
-
 /// Configuration for a Hegel test run.
 ///
 /// Use builder methods to customize, then pass to [`Hegel::settings`] or
@@ -518,12 +879,12 @@ enum Database {
 /// and tests are derandomized by default.
 #[derive(Debug, Clone)]
 pub struct Settings {
-    test_cases: u64,
-    verbosity: Verbosity,
-    seed: Option<u64>,
-    derandomize: bool,
-    database: Database,
-    suppress_health_check: Vec<HealthCheck>,
+    pub(crate) test_cases: u64,
+    pub(crate) verbosity: Verbosity,
+    pub(crate) seed: Option<u64>,
+    pub(crate) derandomize: bool,
+    pub(crate) database: Database,
+    pub(crate) suppress_health_check: Vec<HealthCheck>,
 }
 
 impl Settings {
@@ -538,7 +899,7 @@ impl Settings {
             database: if in_ci {
                 Database::Disabled
             } else {
-                Database::Unset // nocov
+                Database::Unset
             },
             suppress_health_check: Vec::new(),
         }
@@ -601,11 +962,48 @@ impl Settings {
 }
 
 impl Default for Settings {
-    // nocov start
     fn default() -> Self {
         Self::new()
-        // nocov end
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Database {
+    Unset,
+    Disabled,
+    Path(String),
+}
+
+// ─── Hegel test builder ─────────────────────────────────────────────────────
+
+// internal use only
+#[doc(hidden)]
+pub fn hegel<F>(test_fn: F)
+where
+    F: FnMut(TestCase),
+{
+    Hegel::new(test_fn).run();
+}
+
+fn is_in_ci() -> bool {
+    const CI_VARS: &[(&str, Option<&str>)] = &[
+        ("CI", None),
+        ("TF_BUILD", Some("true")),
+        ("BUILDKITE", Some("true")),
+        ("CIRCLECI", Some("true")),
+        ("CIRRUS_CI", Some("true")),
+        ("CODEBUILD_BUILD_ID", None),
+        ("GITHUB_ACTIONS", Some("true")),
+        ("GITLAB_CI", None),
+        ("HEROKU_TEST_RUN_ID", None),
+        ("TEAMCITY_VERSION", None),
+        ("bamboo.buildKey", None),
+    ];
+
+    CI_VARS.iter().any(|(key, value)| match value {
+        None => std::env::var_os(key).is_some(),
+        Some(expected) => std::env::var(key).ok().as_deref() == Some(expected),
+    })
 }
 
 // internal use only
@@ -655,246 +1053,53 @@ where
     /// sends a `run_test` command, processes test cases, and reports results.
     /// Panics if any test case fails.
     pub fn run(self) {
-        let session = HegelSession::get();
-        let connection = &session.connection;
+        init_panic_hook();
 
+        let runner = ServerTestRunner;
         let mut test_fn = self.test_fn;
-        let verbosity = self.settings.verbosity;
-        let got_interesting = Arc::new(AtomicBool::new(false));
-        let mut test_stream = connection.new_stream();
+        let got_interesting = AtomicBool::new(false);
 
-        let suppress_names: Vec<Value> = self
-            .settings
-            .suppress_health_check
-            .iter()
-            .map(|c| Value::Text(c.as_str().to_string()))
-            .collect();
-
-        let database_key_bytes = self
-            .database_key
-            .map_or(Value::Null, |k| Value::Bytes(k.into_bytes()));
-
-        let mut run_test_msg = cbor_map! {
-            "command" => "run_test",
-            "test_cases" => self.settings.test_cases,
-            "seed" => self.settings.seed.map_or(Value::Null, Value::from),
-            "stream_id" => test_stream.stream_id,
-            "database_key" => database_key_bytes,
-            "derandomize" => self.settings.derandomize
-        };
-        let db_value = match &self.settings.database {
-            Database::Unset => Option::None, // nocov
-            Database::Disabled => Some(Value::Null),
-            Database::Path(s) => Some(Value::Text(s.clone())),
-        };
-        if let Some(db) = db_value {
-            if let Value::Map(ref mut map) = run_test_msg {
-                map.push((Value::Text("database".to_string()), db));
-            }
-        }
-        if !suppress_names.is_empty() {
-            if let Value::Map(ref mut map) = run_test_msg {
-                map.push((
-                    Value::Text("suppress_health_check".to_string()),
-                    Value::Array(suppress_names),
-                ));
-            }
-        }
-
-        // The control stream is behind a Mutex because Stream requires &mut self.
-        // This only serializes the brief run_test send/receive — actual test
-        // execution happens on per-test streams without holding this lock.
-        {
-            let mut control = session.control.lock().unwrap();
-            let run_test_id = control
-                .send_request(cbor_encode(&run_test_msg))
-                .expect("Failed to send run_test");
-
-            let run_test_response = control
-                .receive_reply(run_test_id)
-                .expect("Failed to receive run_test response");
-            let _run_test_result: Value = cbor_decode(&run_test_response);
-        }
-
-        if verbosity == Verbosity::Debug {
-            eprintln!("run_test response received"); // nocov
-        }
-
-        let result_data: Value;
-        let ack_null = cbor_map! {"result" => Value::Null};
-        loop {
-            // Handle the server dying between events: receive_request will
-            // fail with RecvError once the background reader clears the senders.
-            let (event_id, event_payload) = match test_stream.receive_request() {
-                Ok(event) => event,
-                // nocov start
-                Err(_) if connection.server_has_exited() => {
-                    panic!("{}", SERVER_CRASHED_MESSAGE);
-                    // nocov end
+        let result = runner.run(
+            &self.settings,
+            self.database_key.as_deref(),
+            &mut |backend, is_final| {
+                let tc_result = run_test_case(backend, &mut test_fn, is_final);
+                if matches!(&tc_result, TestCaseResult::Interesting { .. }) {
+                    got_interesting.store(true, Ordering::SeqCst);
                 }
-                Err(e) => unreachable!("Failed to receive event (server still running): {}", e),
-            };
+                tc_result
+            },
+        );
 
-            let event: Value = cbor_decode(&event_payload);
-            let event_type = map_get(&event, "event")
-                .and_then(as_text)
-                .expect("Expected event in payload");
-
-            if verbosity == Verbosity::Debug {
-                eprintln!("Received event: {:?}", event); // nocov
-            }
-
-            match event_type {
-                "test_case" => {
-                    let stream_id = map_get(&event, "stream_id")
-                        .and_then(as_u64)
-                        .expect("Missing stream id") as u32;
-
-                    let test_case_stream = connection.connect_stream(stream_id);
-
-                    // Ack the test_case event BEFORE running the test (prevents deadlock)
-                    test_stream
-                        .write_reply(event_id, cbor_encode(&ack_null))
-                        .expect("Failed to ack test_case");
-
-                    run_test_case(
-                        connection,
-                        test_case_stream,
-                        &mut test_fn,
-                        false,
-                        verbosity,
-                        &got_interesting,
-                    );
-                }
-                "test_done" => {
-                    let ack_true = cbor_map! {"result" => true};
-                    test_stream
-                        .write_reply(event_id, cbor_encode(&ack_true))
-                        .expect("Failed to ack test_done");
-                    result_data = map_get(&event, "results").cloned().unwrap_or(Value::Null);
-                    break;
-                }
-                _ => {
-                    panic!("unknown event: {}", event_type); // nocov
-                }
-            }
-        }
-
-        // Check for server-side errors before processing results
-        if let Some(error_msg) = map_get(&result_data, "error").and_then(as_text) {
-            panic!("Server error: {}", error_msg); // nocov
-        }
-
-        // Check for health check failure before processing results
-        if let Some(failure_msg) = map_get(&result_data, "health_check_failure").and_then(as_text) {
-            panic!("Health check failure:\n{}", failure_msg); // nocov
-        }
-
-        // Check for flaky test detection
-        if let Some(flaky_msg) = map_get(&result_data, "flaky").and_then(as_text) {
-            panic!("Flaky test detected: {}", flaky_msg); // nocov
-        }
-
-        let n_interesting = map_get(&result_data, "interesting_test_cases")
-            .and_then(as_u64)
-            .unwrap_or(0);
-
-        if verbosity == Verbosity::Debug {
-            eprintln!("Test done. interesting_test_cases={}", n_interesting); // nocov
-        }
-
-        // Process final replay test cases (one per interesting example)
-        let mut final_result: Option<TestCaseResult> = None;
-        for _ in 0..n_interesting {
-            let (event_id, event_payload) = test_stream
-                .receive_request()
-                .expect("Failed to receive final test_case");
-
-            let event: Value = cbor_decode(&event_payload);
-            let event_type = map_get(&event, "event").and_then(as_text);
-            assert_eq!(event_type, Some("test_case"));
-
-            let stream_id = map_get(&event, "stream_id")
-                .and_then(as_u64)
-                .expect("Missing stream id") as u32;
-
-            let test_case_stream = connection.connect_stream(stream_id);
-
-            test_stream
-                .write_reply(event_id, cbor_encode(&ack_null))
-                .expect("Failed to ack final test_case");
-
-            let tc_result = run_test_case(
-                connection,
-                test_case_stream,
-                &mut test_fn,
-                true,
-                verbosity,
-                &got_interesting,
-            );
-
-            if matches!(&tc_result, TestCaseResult::Interesting { .. }) {
-                final_result = Some(tc_result);
-            }
-
-            if connection.server_has_exited() {
-                panic!("{}", SERVER_CRASHED_MESSAGE); // nocov
-            }
-        }
-
-        let passed = map_get(&result_data, "passed")
-            .and_then(as_bool)
-            .unwrap_or(true);
-
-        let test_failed = !passed || got_interesting.load(Ordering::SeqCst);
+        let test_failed = !result.passed || got_interesting.load(Ordering::SeqCst);
 
         if is_running_in_antithesis() {
             #[cfg(not(feature = "antithesis"))]
             panic!(
-                // nocov
                 "When Hegel is run inside of Antithesis, it requires the `antithesis` feature. \
                 You can add it with {{ features = [\"antithesis\"] }}."
             );
 
             #[cfg(feature = "antithesis")]
-            // nocov start
             if let Some(ref loc) = self.test_location {
                 crate::antithesis::emit_assertion(loc, !test_failed);
-                // nocov end
             }
         }
 
         if test_failed {
-            let msg = match &final_result {
-                Some(TestCaseResult::Interesting { panic_message }) => panic_message.as_str(),
-                _ => "unknown", // nocov
-            };
+            let msg = result.failure_message.as_deref().unwrap_or("unknown");
             panic!("Property test failed: {}", msg);
         }
     }
 }
 
-enum TestCaseResult {
-    Valid,
-    Invalid,
-    Interesting { panic_message: String },
-}
+// ─── Generic test case execution ────────────────────────────────────────────
 
-fn run_test_case<F: FnMut(TestCase)>(
-    connection: &Arc<Connection>,
-    test_stream: Stream,
-    test_fn: &mut F,
+fn run_test_case(
+    backend: Box<dyn Backend>,
+    test_fn: &mut dyn FnMut(TestCase),
     is_final: bool,
-    verbosity: Verbosity,
-    got_interesting: &Arc<AtomicBool>,
 ) -> TestCaseResult {
-    // Create TestCase. The test function gets a clone (cheap Rc bump),
-    // so we retain access to the same underlying TestCaseData after the test runs.
-    let backend = Box::new(ServerBackend::new(
-        Arc::clone(connection),
-        test_stream,
-        verbosity,
-    ));
     let tc = TestCase::new(backend, is_final);
 
     let result = with_test_context(|| catch_unwind(AssertUnwindSafe(|| test_fn(tc.clone()))));
@@ -906,11 +1111,8 @@ fn run_test_case<F: FnMut(TestCase)>(
             if msg == ASSUME_FAIL_STRING || msg == STOP_TEST_STRING {
                 (TestCaseResult::Invalid, None)
             } else {
-                got_interesting.store(true, Ordering::SeqCst);
-
                 // Take panic info - we need location for origin, and print details on final
                 let (thread_name, thread_id, location, backtrace) = take_panic_info()
-                    // nocov start
                     .unwrap_or_else(|| {
                         (
                             "<unknown>".to_string(),
@@ -919,7 +1121,6 @@ fn run_test_case<F: FnMut(TestCase)>(
                             Backtrace::disabled(),
                         )
                     });
-                // nocov end
 
                 if is_final {
                     eprintln!(
@@ -928,7 +1129,6 @@ fn run_test_case<F: FnMut(TestCase)>(
                     );
                     eprintln!("{}", msg);
 
-                    // nocov start
                     if backtrace.status() == BacktraceStatus::Captured {
                         let is_full = std::env::var("RUST_BACKTRACE")
                             .map(|v| v == "full")
@@ -941,7 +1141,6 @@ fn run_test_case<F: FnMut(TestCase)>(
                             );
                         }
                     }
-                    // nocov end
                 }
 
                 let origin = format!("Panic at {}", location);
@@ -974,7 +1173,7 @@ fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
     } else if let Some(s) = payload.downcast_ref::<String>() {
         s.clone()
     } else {
-        "Unknown panic".to_string() // nocov
+        "Unknown panic".to_string()
     }
 }
 
