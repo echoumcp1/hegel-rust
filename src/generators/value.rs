@@ -36,8 +36,9 @@ impl From<ciborium::Value> for HegelValue {
                 }
             }
             ciborium::Value::Text(s) => HegelValue::String(s),
+            // nocov start
             ciborium::Value::Bytes(b) => {
-                // nocov
+                // nocov end
                 // Encode bytes as array of numbers
                 HegelValue::Array(
                     // nocov start
