@@ -53,7 +53,7 @@ impl From<ciborium::Value> for HegelValue {
             }
             // nocov start
             ciborium::Value::Map(map) => HegelValue::Object(
-                map.into_iter() // nocov
+                map.into_iter()
                     .map(|(k, v)| {
                         let key = match k {
                             ciborium::Value::Text(s) => s,

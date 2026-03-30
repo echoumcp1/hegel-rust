@@ -134,7 +134,7 @@ where
             let mut collection = Collection::new(tc, "composite_set", self.min_size, self.max_size);
             let mut set = HashSet::new();
             while collection.more() {
-                let element = self.elements.do_draw(tc); // nocov
+                let element = self.elements.do_draw(tc);
                 if !set.insert(element) {
                     collection.reject(Some("duplicate element"));
                     // nocov end
@@ -225,10 +225,10 @@ where
             let mut collection = Collection::new(tc, "composite_map", self.min_size, self.max_size);
             let mut map = HashMap::new();
             while collection.more() {
-                let key = self.keys.do_draw(tc); // nocov
+                let key = self.keys.do_draw(tc);
                 match map.entry(key) {
                     std::collections::hash_map::Entry::Occupied(_) => {
-                        collection.reject(Some("duplicate key")); // nocov
+                        collection.reject(Some("duplicate key"));
                     }
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         let value = self.values.do_draw(tc);
@@ -327,8 +327,8 @@ impl<T: serde::Serialize, G: Generator<T>> Generator<Value> for MappedToValue<T,
 
     // nocov start
     fn as_basic(&self) -> Option<BasicGenerator<'_, Value>> {
-        let inner_basic = self.inner.as_basic()?; // nocov
-        let schema = inner_basic.schema().clone(); // nocov
+        let inner_basic = self.inner.as_basic()?;
+        let schema = inner_basic.schema().clone();
         Some(BasicGenerator::new(schema, move |raw| {
             let t_val = inner_basic.parse_raw(raw);
             crate::cbor_utils::cbor_serialize(&t_val)

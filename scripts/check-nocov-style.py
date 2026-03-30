@@ -8,6 +8,7 @@
    comment (use inline // nocov instead).
 4. No // nocov end immediately followed by // nocov start (merge the blocks).
 5. // nocov start and // nocov end must be on their own lines (no code).
+6. No inline // nocov inside a // nocov start/end block (redundant).
 """
 
 from __future__ import annotations
@@ -108,6 +109,11 @@ def check() -> int:
                     # cargo fmt if you add a trailing comment.
                     stripped_end = line.rstrip()
                     block_single_line_could_be_inline = stripped_end.endswith((";", ","))
+                    # Check: no inline nocov inside a block
+                    if is_inline_nocov(line):
+                        violations.append(
+                            f"  {rs_file}:{lineno}: inline // nocov inside a // nocov start/end block (redundant)"
+                        )
                     continue
 
                 if is_inline_nocov(line):
