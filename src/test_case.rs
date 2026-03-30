@@ -38,9 +38,8 @@ impl std::fmt::Display for StopTestError {
 impl std::error::Error for StopTestError {}
 
 static PROTOCOL_DEBUG: LazyLock<bool> = LazyLock::new(|| {
-    // nocov start
     matches!(
-        // nocov end
+        // nocov
         std::env::var("HEGEL_PROTOCOL_DEBUG")
             .unwrap_or_default()
             .to_lowercase()
@@ -319,9 +318,8 @@ impl TestCase {
                     drop(global);
                     Err(StopTestError)
                 } else if error_msg.contains("FlakyStrategyDefinition")
-                    // nocov start
                     || error_msg.contains("FlakyReplay")
-                // nocov end
+                // nocov
                 {
                     // Abort the test case; the server will report the flaky
                     // error in the test_done results, which runner.rs handles.

@@ -32,9 +32,8 @@ where
 
 /// Compile-time FNV-1a hash of a byte slice, producing a u64 label.
 #[doc(hidden)]
-// nocov start
 pub const fn fnv1a_hash(bytes: &[u8]) -> u64 {
-    // nocov end
+    // nocov
     const FNV_OFFSET: u64 = 0xcbf29ce484222325;
     const FNV_PRIME: u64 = 0x100000001b3;
     // nocov start

@@ -4,6 +4,8 @@
 1. No 3+ consecutive inline // nocov lines (use // nocov start/end blocks).
 2. No inline // nocov adjacent to a // nocov start or // nocov end marker
    (expand the block instead).
+3. No single-line // nocov start/end blocks (use inline // nocov instead).
+4. No // nocov end immediately followed by // nocov start (merge the blocks).
 """
 
 from __future__ import annotations
@@ -37,6 +39,8 @@ def check() -> int:
                 continue
 
             in_block = False
+            block_start_line = -1
+            block_content_lines = 0
             run_start = -1
             run_length = 0
 
@@ -56,9 +60,16 @@ def check() -> int:
                         )
                     run_length = 0
                     in_block = True
+                    block_start_line = lineno
+                    block_content_lines = 0
                     continue
 
                 if nocov_end_re.search(line):
+                    # Check: single-line block
+                    if block_content_lines == 1:
+                        violations.append(
+                            f"  {rs_file}:{block_start_line}: single-line // nocov start/end block (use inline // nocov instead)"
+                        )
                     in_block = False
                     # Check: inline nocov right after this end
                     if i + 1 < len(lines) and is_inline_nocov(lines[i + 1]):
@@ -73,6 +84,7 @@ def check() -> int:
                     continue
 
                 if in_block:
+                    block_content_lines += 1
                     continue
 
                 if is_inline_nocov(line):
