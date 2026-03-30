@@ -61,10 +61,8 @@
 //! ```
 
 use crate::TestCase;
-use crate::cbor_utils::cbor_map;
 use crate::generators::integers;
 use crate::test_case::{ASSUME_FAIL_STRING, STOP_TEST_STRING};
-use ciborium::Value;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
@@ -94,18 +92,11 @@ pub struct Variables<T> {
 
 impl<T> Variables<T> {
     fn pool_generate(&self, consume: bool) -> i128 {
-        match self.tc.send_request(
-            "pool_generate",
-            &cbor_map! {
-                "pool_id" => self.pool_id,
-                "consume" => consume,
-            },
-        ) {
-            Ok(Value::Integer(i)) => i.into(),
+        match self.tc.backend().pool_generate(self.pool_id, consume) {
+            Ok(id) => id,
             Err(_) => {
                 panic!("{}", STOP_TEST_STRING);
             }
-            Ok(other) => panic!("Expected integer response for variable id, got {:?}", other), // nocov
         }
     }
 
@@ -116,15 +107,11 @@ impl<T> Variables<T> {
 
     /// Add a value to the pool.
     pub fn add(&mut self, v: T) {
-        let variable_id: i128 = match self
-            .tc
-            .send_request("pool_add", &cbor_map! {"pool_id" => self.pool_id})
-        {
-            Ok(Value::Integer(i)) => i.into(),
+        let variable_id: i128 = match self.tc.backend().pool_add(self.pool_id) {
+            Ok(id) => id,
             Err(_) => {
                 panic!("{}", STOP_TEST_STRING); // nocov
             }
-            Ok(other) => panic!("Expected integer response for variable id, got {:?}", other), // nocov
         };
         if self.values.contains_key(&variable_id) {
             panic!("unexpected variable id in map"); // nocov
@@ -153,12 +140,11 @@ impl<T> Variables<T> {
 
 /// Create a new variable pool for stateful tests.
 pub fn variables<T>(tc: &TestCase) -> Variables<T> {
-    let pool_id = match tc.send_request("new_pool", &cbor_map! {}) {
-        Ok(Value::Integer(i)) => i.into(),
+    let pool_id = match tc.backend().new_pool() {
+        Ok(id) => id,
         Err(_) => {
             panic!("{}", STOP_TEST_STRING); // nocov
         }
-        Ok(other) => panic!("Expected integer response for pool id, got {:?}", other), // nocov
     };
     Variables {
         pool_id,

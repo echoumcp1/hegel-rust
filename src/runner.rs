@@ -1,4 +1,5 @@
 use crate::antithesis::{TestLocation, is_running_in_antithesis};
+use crate::backend::ServerBackend;
 use crate::control::{currently_in_test_context, with_test_context};
 use crate::protocol::{Connection, HANDSHAKE_STRING, SERVER_CRASHED_MESSAGE, Stream};
 use crate::test_case::{ASSUME_FAIL_STRING, STOP_TEST_STRING, TestCase};
@@ -889,7 +890,12 @@ fn run_test_case<F: FnMut(TestCase)>(
 ) -> TestCaseResult {
     // Create TestCase. The test function gets a clone (cheap Rc bump),
     // so we retain access to the same underlying TestCaseData after the test runs.
-    let tc = TestCase::new(Arc::clone(connection), test_stream, verbosity, is_final);
+    let backend = Box::new(ServerBackend::new(
+        Arc::clone(connection),
+        test_stream,
+        verbosity,
+    ));
+    let tc = TestCase::new(backend, is_final);
 
     let result = with_test_context(|| catch_unwind(AssertUnwindSafe(|| test_fn(tc.clone()))));
 
@@ -949,22 +955,13 @@ fn run_test_case<F: FnMut(TestCase)>(
 
     // Send mark_complete using the same stream that generators used.
     // Skip if test was aborted (StopTest) - server already closed the stream.
-    if !tc.test_aborted() {
+    if !tc.backend().test_aborted() {
         let status = match &tc_result {
             TestCaseResult::Valid => "VALID",
             TestCaseResult::Invalid => "INVALID",
             TestCaseResult::Interesting { .. } => "INTERESTING",
         };
-        let origin_value = match &origin {
-            Some(s) => Value::Text(s.clone()),
-            None => Value::Null,
-        };
-        let mark_complete = cbor_map! {
-            "command" => "mark_complete",
-            "status" => status,
-            "origin" => origin_value
-        };
-        tc.send_mark_complete(&mark_complete);
+        tc.backend().mark_complete(status, origin.as_deref());
     }
 
     tc_result
