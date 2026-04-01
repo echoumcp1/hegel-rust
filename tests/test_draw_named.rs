@@ -31,6 +31,13 @@ fn test_draw_named_repeatable_reuse_ok(tc: TestCase) {
 }
 
 #[hegel::test(test_cases = 1)]
+fn test_draw_named_repeatable_skips_taken_name(tc: TestCase) {
+    tc.draw_named(generators::booleans(), "x_1", false);
+    tc.draw_named(generators::booleans(), "x", true);
+    tc.draw_named(generators::booleans(), "x", true);
+}
+
+#[hegel::test(test_cases = 1)]
 fn test_draw_named_different_names_ok(tc: TestCase) {
     let _a = tc.draw_named(generators::booleans(), "x", false);
     let _b = tc.draw_named(generators::booleans(), "y", false);
