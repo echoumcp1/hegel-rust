@@ -2,7 +2,7 @@ use crate::antithesis::{TestLocation, is_running_in_antithesis};
 use crate::backend::{DataSource, DataSourceError, TestCaseResult, TestRunResult, TestRunner};
 use crate::cbor_utils::{as_bool, as_text, as_u64, cbor_map, map_get, map_insert};
 use crate::control::{currently_in_test_context, with_test_context};
-use crate::protocol::{Connection, HANDSHAKE_STRING, SERVER_CRASHED_MESSAGE, Stream};
+use crate::protocol::{Connection, HANDSHAKE_STRING, Stream};
 use crate::test_case::{ASSUME_FAIL_STRING, STOP_TEST_STRING, TestCase};
 use ciborium::Value;
 
@@ -116,7 +116,7 @@ impl ServerDataSource {
                     self.aborted.set(true);
                     Err(DataSourceError::StopTest)
                 } else if self.connection.server_has_exited() {
-                    panic!("{}", SERVER_CRASHED_MESSAGE); // nocov
+                    panic!("{}", server_crash_message()); // nocov
                 } else {
                     Err(DataSourceError::ServerError(e.to_string()))
                 }
@@ -434,7 +434,7 @@ impl TestRunner for ServerTestRunner {
                 Ok(event) => event,
                 // nocov start
                 Err(_) if connection.server_has_exited() => {
-                    panic!("{}", SERVER_CRASHED_MESSAGE);
+                    panic!("{}", server_crash_message());
                     // nocov end
                 }
                 Err(e) => unreachable!("Failed to receive event (server still running): {}", e),
@@ -539,7 +539,7 @@ impl TestRunner for ServerTestRunner {
             }
 
             if connection.server_has_exited() {
-                panic!("{}", SERVER_CRASHED_MESSAGE); // nocov
+                panic!("{}", server_crash_message()); // nocov
             }
         }
 
@@ -842,6 +842,116 @@ fn resolve_hegel_path(path: &str) -> String {
          Check that {} is set correctly.",
         path, HEGEL_SERVER_COMMAND_ENV
     );
+}
+
+/// Format a server log excerpt for inclusion in error messages.
+///
+/// Returns the last 5 unindented lines and the content between them. Runs of
+/// more than 10 consecutive indented lines are truncated with a summary.
+pub fn format_log_excerpt(content: &str) -> String {
+    const MAX_UNINDENTED: usize = 5;
+    const INDENT_THRESHOLD: usize = 10;
+    const INDENT_CONTEXT: usize = 3;
+
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        return "(empty)".to_string();
+    }
+
+    // Find start: walk backwards until we've seen MAX_UNINDENTED unindented lines
+    let mut unindented_seen = 0;
+    let mut start_idx = 0;
+    for (i, line) in lines.iter().enumerate().rev() {
+        if is_log_unindented(line) {
+            unindented_seen += 1;
+            if unindented_seen >= MAX_UNINDENTED {
+                start_idx = i;
+                break;
+            }
+        }
+    }
+
+    // Process the relevant section, truncating long indented runs
+    let relevant = &lines[start_idx..];
+    let mut output: Vec<String> = Vec::new();
+    let mut indent_run: Vec<&str> = Vec::new();
+
+    for &line in relevant {
+        if is_log_unindented(line) {
+            flush_log_indent_run(
+                &mut indent_run,
+                &mut output,
+                INDENT_THRESHOLD,
+                INDENT_CONTEXT,
+            );
+            output.push(line.to_string());
+        } else {
+            indent_run.push(line);
+        }
+    }
+    flush_log_indent_run(
+        &mut indent_run,
+        &mut output,
+        INDENT_THRESHOLD,
+        INDENT_CONTEXT,
+    );
+
+    output.join("\n")
+}
+
+fn is_log_unindented(line: &str) -> bool {
+    !line.is_empty() && !line.starts_with(' ') && !line.starts_with('\t')
+}
+
+fn flush_log_indent_run(
+    run: &mut Vec<&str>,
+    output: &mut Vec<String>,
+    threshold: usize,
+    context: usize,
+) {
+    if run.is_empty() {
+        return;
+    }
+    if run.len() > threshold {
+        let keep = context.min(run.len() / 2);
+        for &line in &run[..keep] {
+            output.push(line.to_string());
+        }
+        let hidden = run.len() - 2 * keep;
+        output.push(format!("  [...{hidden} lines...]"));
+        for &line in &run[run.len() - keep..] {
+            output.push(line.to_string());
+        }
+    } else {
+        for &line in run.iter() {
+            output.push(line.to_string());
+        }
+    }
+    run.clear();
+}
+
+fn server_log_excerpt() -> Option<String> {
+    let log_path = format!("{HEGEL_SERVER_DIR}/server.log");
+    let content = std::fs::read_to_string(&log_path).ok()?;
+    if content.trim().is_empty() {
+        return None;
+    }
+    Some(format_log_excerpt(&content))
+}
+
+fn server_crash_message() -> String {
+    const BASE: &str = "The hegel server process exited unexpectedly.";
+    match server_log_excerpt() {
+        Some(excerpt) => format!("{BASE}\n\nLast server log entries:\n{excerpt}"),
+        None => format!("{BASE}\n\n(No entries found in .hegel/server.log)"),
+    }
+}
+
+fn handle_channel_error(e: std::io::Error) -> ! {
+    if e.kind() == std::io::ErrorKind::ConnectionAborted {
+        panic!("{}", server_crash_message());
+    }
+    unreachable!("unexpected channel error: {e}")
 }
 
 // ─── Public types ───────────────────────────────────────────────────────────
