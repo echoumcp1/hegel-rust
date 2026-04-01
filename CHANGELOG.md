@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 - 2026-04-01
+
+This patch upgrades [`rand`](https://crates.io/crates/rand) to `0.10` in our `rand` feature.
+
+Thanks to Benjamin Brittain for this patch!
+
 ## 0.4.0 - 2026-04-01
 
 This release changes how hegel-core is installed and run:
