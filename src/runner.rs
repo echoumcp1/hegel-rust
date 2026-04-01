@@ -261,8 +261,7 @@ fn init_panic_hook() {
 
 fn hegel_command() -> Command {
     if let Ok(override_path) = std::env::var(HEGEL_SERVER_COMMAND_ENV) {
-        let resolved = resolve_hegel_path(&override_path); // nocov
-        return Command::new(resolved); // nocov
+        return Command::new(resolve_hegel_path(&override_path)); // nocov
     }
     let uv_path = crate::uv::find_uv();
     let mut cmd = Command::new(uv_path);
@@ -295,16 +294,13 @@ fn wait_for_exit(
 ) -> Option<std::process::ExitStatus> {
     let start = Instant::now();
     loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return Some(status),
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    return None;
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            Err(_) => return None, // nocov
+        if let Ok(Some(status)) = child.try_wait() {
+            return Some(status);
         }
+        if start.elapsed() >= timeout {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -554,11 +550,9 @@ impl Settings {
     }
 
     /// Set the verbosity level.
-    // nocov start
     pub fn verbosity(mut self, verbosity: Verbosity) -> Self {
         self.verbosity = verbosity;
         self
-        // nocov end
     }
 
     /// Set a fixed seed for reproducibility, or `None` for random.

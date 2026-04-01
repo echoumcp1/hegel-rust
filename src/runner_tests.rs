@@ -1,6 +1,11 @@
 use super::*;
 
 #[test]
+fn test_settings_verbosity() {
+    let _ = Settings::new().verbosity(Verbosity::Debug);
+}
+
+#[test]
 fn test_wait_for_exit_child_exits() {
     let mut child = Command::new("true").spawn().unwrap();
     let result = wait_for_exit(&mut child, Duration::from_secs(5));
