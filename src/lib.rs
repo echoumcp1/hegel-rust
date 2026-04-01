@@ -192,8 +192,8 @@ pub mod generators;
 pub(crate) mod protocol;
 pub(crate) mod runner;
 pub mod stateful;
-mod uv;
 mod test_case;
+mod uv;
 
 #[doc(hidden)]
 pub use control::currently_in_test_context;

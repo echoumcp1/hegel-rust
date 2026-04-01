@@ -284,7 +284,6 @@ fn server_log_file() -> File {
         .expect("Failed to clone server log file handle")
 }
 
-
 /// Health checks that can be suppressed during test execution.
 ///
 /// Health checks detect common issues with test configuration that would
