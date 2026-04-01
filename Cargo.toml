@@ -39,6 +39,7 @@ serde = { version = "1.0.103", features = ["derive"] }
 paste = "1.0"
 tempfile = "3.0"
 ciborium = "0.2.2"
+half = "2.7"
 crc32fast = "1.4"
 hegeltest-macros = { version = "=0.3.7", path = "hegel-macros" }
 # optional feature dependencies

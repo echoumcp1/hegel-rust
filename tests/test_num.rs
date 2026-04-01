@@ -64,6 +64,21 @@ fn test_big_integers_finds_max_boundary() {
     find_any(generator, |n| *n == BigInt::from(50));
 }
 
+#[test]
+fn test_big_integers_big() {
+    let generator = gs::big_integers()
+        .min_value(BigInt::one() << 129u32)
+        .max_value(BigInt::one() << 130u32);
+    find_any(generator, |n| *n >= BigInt::one() << 129u32);
+}
+
+#[test]
+fn test_big_integers_small() {
+    let generator = gs::big_integers()
+        .min_value(-(BigInt::one() << 130u32))
+        .max_value(-(BigInt::one() << 129u32));
+    find_any(generator, |n| *n >= -(BigInt::one() << 130u32));
+}
 // ---------------------------------------------------------------------------
 // BigUint
 // ---------------------------------------------------------------------------

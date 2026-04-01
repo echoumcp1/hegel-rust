@@ -1,5 +1,5 @@
 use super::{BasicGenerator, BoxedGenerator, Generator, TestCase, integers, labels};
-use crate::cbor_utils::{cbor_array, cbor_map};
+use crate::cbor_utils::common::{cbor_array, cbor_map};
 use ciborium::Value;
 use std::marker::PhantomData;
 

@@ -1,5 +1,5 @@
 use super::{BasicGenerator, Generator, TestCase};
-use crate::cbor_utils::cbor_map;
+use crate::cbor_utils::common::cbor_map;
 use ciborium::Value;
 
 /// Generate the unit value `()`.

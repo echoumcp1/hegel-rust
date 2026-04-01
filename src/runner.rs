@@ -4,7 +4,7 @@ use crate::protocol::{Channel, Connection, HANDSHAKE_STRING, SERVER_CRASHED_MESS
 use crate::test_case::{ASSUME_FAIL_STRING, STOP_TEST_STRING, TestCase};
 use ciborium::Value;
 
-use crate::cbor_utils::{as_bool, as_text, as_u64, cbor_map, map_get};
+use crate::cbor_utils::common::{as_bool, as_text, as_u64, cbor_map, map_get};
 use std::backtrace::{Backtrace, BacktraceStatus};
 use std::cell::RefCell;
 use std::fs::{File, OpenOptions};
@@ -931,5 +931,5 @@ fn cbor_encode(value: &Value) -> Vec<u8> {
 
 /// Decode CBOR bytes to a ciborium::Value.
 fn cbor_decode(bytes: &[u8]) -> Value {
-    ciborium::from_reader(bytes).expect("CBOR decoding failed")
+    crate::cbor_reader::read_value(&mut &*bytes).expect("CBOR decoding failed")
 }

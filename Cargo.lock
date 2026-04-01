@@ -168,6 +168,7 @@ version = "0.3.7"
 dependencies = [
  "ciborium",
  "crc32fast",
+ "half",
  "hegeltest-macros",
  "num-bigint",
  "num-complex",

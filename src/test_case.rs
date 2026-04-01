@@ -1,4 +1,4 @@
-use crate::cbor_utils::{cbor_map, map_insert};
+use crate::cbor_utils::common::{cbor_map, map_insert};
 use crate::generators::Generator;
 use crate::protocol::{Channel, Connection, SERVER_CRASHED_MESSAGE};
 use crate::runner::Verbosity;

@@ -61,7 +61,7 @@
 //! ```
 
 use crate::TestCase;
-use crate::cbor_utils::cbor_map;
+use crate::cbor_utils::common::cbor_map;
 use crate::generators::integers;
 use crate::test_case::{ASSUME_FAIL_STRING, STOP_TEST_STRING};
 use ciborium::Value;
