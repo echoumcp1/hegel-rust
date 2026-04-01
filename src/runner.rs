@@ -952,5 +952,5 @@ fn cbor_encode(value: &Value) -> Vec<u8> {
 
 /// Decode CBOR bytes to a ciborium::Value.
 fn cbor_decode(bytes: &[u8]) -> Value {
-    crate::cbor_reader::read_value(&mut &*bytes).expect("CBOR decoding failed")
+    crate::cbor_utils::cbor_reader::read_value(&mut &*bytes).expect("CBOR decoding failed")
 }

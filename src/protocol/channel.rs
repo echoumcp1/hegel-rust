@@ -149,7 +149,7 @@ impl Channel {
         let id = self.send_request(payload)?;
         let response_bytes = self.receive_reply(id)?;
 
-        let response: Value = crate::cbor_reader::read_value(&mut &response_bytes[..])?;
+        let response: Value = crate::cbor_utils::cbor_reader::read_value(&mut &response_bytes[..])?;
 
         // Check for error response
         if let Some(error) = map_get(&response, "error") {

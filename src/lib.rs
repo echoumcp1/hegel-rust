@@ -186,7 +186,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub(crate) mod antithesis;
-pub(crate) mod cbor_reader;
 pub(crate) mod cbor_utils;
 pub(crate) mod control;
 pub mod generators;
