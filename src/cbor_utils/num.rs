@@ -28,19 +28,19 @@ pub fn cbor_to_bigint(v: Value) -> BigInt {
         Value::Integer(i) => BigInt::from(i128::from(i)),
         Value::Tag(2, inner) => {
             let Value::Bytes(bytes) = *inner else {
-                panic!("Expected Bytes inside bignum tag 2, got {:?}", inner);
+                panic!("Expected Bytes inside bignum tag 2, got {:?}", inner); // nocov
             };
             BigInt::from_bytes_be(Sign::Plus, &bytes)
         }
         Value::Tag(3, inner) => {
             let Value::Bytes(bytes) = *inner else {
-                panic!("Expected Bytes inside bignum tag 3, got {:?}", inner);
+                panic!("Expected Bytes inside bignum tag 3, got {:?}", inner); // nocov
             };
             // Tag 3 value is -1 - n
             let n = BigUint::from_bytes_be(&bytes);
             BigInt::from(n) - BigInt::one()
         }
-        other => panic!("Expected integer or bignum tag, got {:?}", other),
+        other => panic!("Expected integer or bignum tag, got {:?}", other), // nocov
     }
 }
 
