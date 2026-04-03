@@ -115,7 +115,10 @@ jobs:
           MIN_PROTOCOL=$(grep -oE 'SUPPORTED_PROTOCOL_VERSIONS.*\(([0-9.]+)' src/runner.rs | grep -oE '[0-9.]+$')
           echo "Minimum supported protocol version: $MIN_PROTOCOL"
 
-          # Look up the earliest hegel-core version for this protocol
+          # Look up the earliest compatible hegel-core version for this protocol.
+          # protocol-core-versions.json maps protocol versions to the minimum
+          # hegel-core that supports both the protocol AND --stdio mode (required
+          # by the Rust library). --stdio was added in hegel-core 0.2.3.
           MIN_CORE=$(python3 -c "import json; print(json.load(open('.github/protocol-core-versions.json'))['$MIN_PROTOCOL'])")
           echo "Minimum hegel-core version: $MIN_CORE"
           echo "min_core=$MIN_CORE" >> "$GITHUB_OUTPUT"
