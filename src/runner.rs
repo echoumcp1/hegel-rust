@@ -161,14 +161,13 @@ impl DataSource for ServerBackend {
         }
         let response = self.send_request("new_collection", &payload)?;
         match response {
-            Value::Text(s) => Ok(s),
             Value::Integer(i) => {
                 let n: i128 = i.into();
                 Ok(n.to_string())
             }
             // nocov start
             _ => panic!(
-                "Expected text or integer response from new_collection, got {:?}",
+                "Expected integer response from new_collection, got {:?}",
                 response
             ),
             // nocov end
