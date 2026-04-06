@@ -1,6 +1,6 @@
 use super::{BasicGenerator, Generator, TestCase};
-use crate::cbor_utils::common::cbor_map;
-use crate::cbor_utils::num::{cbor_to_bigint, cbor_to_biguint, int_to_cbor};
+use crate::utils::cbor_utils::cbor_map;
+use crate::utils::num::{cbor_to_bigint, cbor_to_biguint, int_to_cbor};
 use ciborium::Value;
 use num_bigint::{BigInt, BigUint};
 use num_complex::Complex;

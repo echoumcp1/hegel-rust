@@ -7,7 +7,7 @@ const REPLY_BIT: u32 = 1 << 31;
 
 #[derive(Debug, Clone)]
 pub struct Packet {
-    pub channel: u32,
+    pub stream: u32,
     pub message_id: u32,
     pub is_reply: bool,
     pub payload: Vec<u8>,
@@ -23,7 +23,7 @@ pub fn write_packet<W: Write + ?Sized>(writer: &mut W, packet: &Packet) -> std::
     let mut header = [0u8; PACKET_HEADER_SIZE];
     header[0..4].copy_from_slice(&PACKET_MAGIC.to_be_bytes());
     // Checksum placeholder at 4..8, filled after
-    header[8..12].copy_from_slice(&packet.channel.to_be_bytes());
+    header[8..12].copy_from_slice(&packet.stream.to_be_bytes());
     header[12..16].copy_from_slice(&message_id.to_be_bytes());
     header[16..20].copy_from_slice(&(packet.payload.len() as u32).to_be_bytes());
 
@@ -48,7 +48,7 @@ pub fn read_packet<R: Read + ?Sized>(reader: &mut R) -> std::io::Result<Packet> 
 
     let magic = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
     let checksum = u32::from_be_bytes([header[4], header[5], header[6], header[7]]);
-    let channel = u32::from_be_bytes([header[8], header[9], header[10], header[11]]);
+    let stream = u32::from_be_bytes([header[8], header[9], header[10], header[11]]);
     let message_id_raw = u32::from_be_bytes([header[12], header[13], header[14], header[15]]);
     let length = u32::from_be_bytes([header[16], header[17], header[18], header[19]]);
 
@@ -104,7 +104,7 @@ pub fn read_packet<R: Read + ?Sized>(reader: &mut R) -> std::io::Result<Packet> 
     // nocov end
 
     Ok(Packet {
-        channel,
+        stream,
         message_id,
         is_reply,
         payload,
@@ -112,98 +112,5 @@ pub fn read_packet<R: Read + ?Sized>(reader: &mut R) -> std::io::Result<Packet> 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::os::unix::net::UnixStream;
-
-    use ciborium::Value;
-
-    #[test]
-    fn test_packet_roundtrip() {
-        let (mut client, mut server) = UnixStream::pair().unwrap();
-
-        let packet = Packet {
-            channel: 1,
-            message_id: 42,
-            is_reply: false,
-            payload: b"hello world".to_vec(),
-        };
-        write_packet(&mut client, &packet).unwrap();
-
-        let received = read_packet(&mut server).unwrap();
-        assert_eq!(received.channel, 1);
-        assert_eq!(received.message_id, 42);
-        assert!(!received.is_reply);
-        assert_eq!(received.payload, b"hello world");
-    }
-
-    #[test]
-    fn test_reply_packet() {
-        let (mut client, mut server) = UnixStream::pair().unwrap();
-
-        let packet = Packet {
-            channel: 2,
-            message_id: 100,
-            is_reply: true,
-            payload: b"response".to_vec(),
-        };
-        write_packet(&mut client, &packet).unwrap();
-
-        let received = read_packet(&mut server).unwrap();
-        assert_eq!(received.channel, 2);
-        assert_eq!(received.message_id, 100);
-        assert!(received.is_reply);
-        assert_eq!(received.payload, b"response");
-    }
-
-    #[test]
-    fn test_cbor_value_roundtrip() {
-        use crate::cbor_utils::common::cbor_map;
-        // Test that ciborium::Value roundtrips through CBOR
-        let value = cbor_map! {
-            "type" => "integer",
-            "min_value" => 0,
-            "max_value" => 100
-        };
-
-        // Serialize to CBOR bytes
-        let mut cbor_bytes = Vec::new();
-        ciborium::into_writer(&value, &mut cbor_bytes).unwrap();
-
-        // Deserialize back
-        let back: Value = ciborium::from_reader(&cbor_bytes[..]).unwrap();
-
-        assert_eq!(value, back);
-    }
-
-    #[test]
-    fn test_cbor_nan_preserved() {
-        let value = Value::Float(f64::NAN);
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&value, &mut bytes).unwrap();
-        let back: Value = ciborium::from_reader(&bytes[..]).unwrap();
-        if let Value::Float(f) = back {
-            assert!(f.is_nan());
-        } else {
-            panic!("expected Float"); // nocov
-        }
-    }
-
-    #[test]
-    fn test_cbor_infinity_preserved() {
-        let value = Value::Float(f64::INFINITY);
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&value, &mut bytes).unwrap();
-        let back: Value = ciborium::from_reader(&bytes[..]).unwrap();
-        assert_eq!(back, Value::Float(f64::INFINITY));
-    }
-
-    #[test]
-    fn test_cbor_neg_infinity_preserved() {
-        let value = Value::Float(f64::NEG_INFINITY);
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&value, &mut bytes).unwrap();
-        let back: Value = ciborium::from_reader(&bytes[..]).unwrap();
-        assert_eq!(back, Value::Float(f64::NEG_INFINITY));
-    }
-}
+#[path = "../../tests/embedded/protocol/packet_tests.rs"]
+mod tests;

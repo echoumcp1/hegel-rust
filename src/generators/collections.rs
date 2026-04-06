@@ -1,5 +1,5 @@
 use super::{BasicGenerator, BoxedGenerator, Collection, Generator, TestCase, labels};
-use crate::cbor_utils::common::{cbor_map, map_insert};
+use crate::utils::cbor_utils::{cbor_map, map_insert};
 use ciborium::Value;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -47,8 +47,7 @@ where
             basic.do_draw(tc)
         } else {
             tc.start_span(labels::LIST);
-            let mut collection =
-                Collection::new(tc, "composite_list", self.min_size, self.max_size);
+            let mut collection = Collection::new(tc, self.min_size, self.max_size);
             let mut result = Vec::new();
             while collection.more() {
                 result.push(self.elements.do_draw(tc));
@@ -131,7 +130,7 @@ where
         } else {
             // nocov start
             tc.start_span(labels::SET);
-            let mut collection = Collection::new(tc, "composite_set", self.min_size, self.max_size);
+            let mut collection = Collection::new(tc, self.min_size, self.max_size);
             let mut set = HashSet::new();
             while collection.more() {
                 let element = self.elements.do_draw(tc);
@@ -222,7 +221,7 @@ where
         } else {
             // nocov start
             tc.start_span(labels::MAP);
-            let mut collection = Collection::new(tc, "composite_map", self.min_size, self.max_size);
+            let mut collection = Collection::new(tc, self.min_size, self.max_size);
             let mut map = HashMap::new();
             while collection.more() {
                 let key = self.keys.do_draw(tc);
@@ -321,7 +320,7 @@ pub(crate) struct MappedToValue<T, G> {
 impl<T: serde::Serialize, G: Generator<T>> Generator<Value> for MappedToValue<T, G> {
     // nocov start
     fn do_draw(&self, tc: &TestCase) -> Value {
-        crate::cbor_utils::common::cbor_serialize(&self.inner.do_draw(tc))
+        crate::utils::cbor_utils::cbor_serialize(&self.inner.do_draw(tc))
     }
 
     // nocov start
@@ -330,7 +329,7 @@ impl<T: serde::Serialize, G: Generator<T>> Generator<Value> for MappedToValue<T,
         let schema = inner_basic.schema().clone();
         Some(BasicGenerator::new(schema, move |raw| {
             let t_val = inner_basic.parse_raw(raw);
-            crate::cbor_utils::common::cbor_serialize(&t_val)
+            crate::utils::cbor_utils::cbor_serialize(&t_val)
         }))
     }
 }

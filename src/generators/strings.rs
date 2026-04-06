@@ -1,5 +1,5 @@
 use super::{BasicGenerator, Generator, TestCase};
-use crate::cbor_utils::common::{cbor_array, cbor_map, map_insert};
+use crate::utils::cbor_utils::{cbor_array, cbor_map, map_insert};
 use ciborium::Value;
 
 /// Generator for Unicode text strings. Created by [`text()`].
@@ -308,7 +308,8 @@ impl IpAddressGenerator {
             Some(IpVersion::V4) => cbor_map! {"type" => "ipv4"},
             Some(IpVersion::V6) => cbor_map! {"type" => "ipv6"},
             None => cbor_map! {
-                "one_of" => cbor_array![
+                "type" => "one_of",
+                "generators" => cbor_array![
                     cbor_map!{"type" => "ipv4"},
                     cbor_map!{"type" => "ipv6"}
             // nocov end
