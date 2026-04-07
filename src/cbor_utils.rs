@@ -70,11 +70,11 @@ pub fn map_insert(value: &mut Value, key: &str, val: impl Into<Value>) {
 // prefer `source`.
 pub fn map_extend(target: &mut Value, source: Value) {
     let Value::Map(source_entries) = source else {
-        panic!("expected Value::Map, got {source:?}"); // nocov
+        panic!("expected Value::Map, got {source:?}");
     };
     for (k, v) in source_entries {
         let Value::Text(ref key) = k else {
-            panic!("expected Value::Text, got {k:?}"); // nocov
+            panic!("expected Value::Text, got {k:?}");
         };
         map_insert(target, key, v);
     }
