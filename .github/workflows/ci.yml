@@ -124,9 +124,7 @@ jobs:
           MIN_CORE: ${{ steps.min-version.outputs.min_core }}
         run: |
           uv tool install "hegel-core==$MIN_CORE"
-          # Skip antithesis tests: they spawn subprocess projects that inherit
-          # HEGEL_SERVER_COMMAND and the old server doesn't support them.
-          HEGEL_SERVER_COMMAND=$(which hegel) RUST_BACKTRACE=1 cargo test -- --skip test_antithesis
+          HEGEL_SERVER_COMMAND=$(which hegel) just check-tests
 
   docs:
     name: docs
