@@ -151,11 +151,11 @@ pub trait Generator<T>: Send + Sync {
     ///
     /// // Different generator types producing the same output type —
     /// // boxing lets them be stored in a vec and passed to one_of
-    /// let gen = gs::one_of(vec![
+    /// let gen = vec![
     ///     gs::integers::<i32>().min_value(0).max_value(10).boxed(),
     ///     gs::integers::<i32>().map(|n| n * 100).boxed(),
     ///     gs::sampled_from(vec![1, 2, 3]).boxed(),
-    /// ]);
+    /// ];
     /// ```
     fn boxed<'a>(self) -> BoxedGenerator<'a, T>
     where
