@@ -106,11 +106,3 @@ This project enforces 100% line coverage for new code. You may not add `// nocov
 ### Conformance Tests
 
 Located in `tests/conformance/`. Rust test binaries in `tests/conformance/rust/src/bin/` are invoked by a Python test runner (`tests/conformance/test_conformance.py`) that validates generators produce values matching their declared constraints.
-
-### Creating Pull Requests
-
-Use the `create-pr` skill, which handles rebasing, RELEASE.md, draft creation, and CI watching. Run the `self-review` skill first.
-
-### Writing Changelog Entries
-
-When writing a `RELEASE.md`, read `.claude/skills/create-pr/references/changelog-guidance.md` for detailed style guidance.
