@@ -18,10 +18,7 @@ struct Params {
 
 #[derive(Serialize)]
 struct Metrics {
-    size: usize,
-    min_element: Option<i32>,
-    max_element: Option<i32>,
-    all_unique: bool,
+    elements: Vec<i32>,
 }
 
 fn main() {
@@ -59,24 +56,7 @@ fn main() {
         }
 
         let list = tc.draw(vec_gen);
-
-        let size = list.len();
-        let (min_element, max_element) = if list.is_empty() {
-            (None, None)
-        } else {
-            (list.iter().min().copied(), list.iter().max().copied())
-        };
-        let unique_count = {
-            let mut seen = std::collections::HashSet::new();
-            list.iter().filter(|x| seen.insert(*x)).count()
-        };
-
-        write(&Metrics {
-            size,
-            min_element,
-            max_element,
-            all_unique: unique_count == size,
-        });
+        write(&Metrics { elements: list });
     })
     .settings(Settings::new().test_cases(get_test_cases()))
     .run();
