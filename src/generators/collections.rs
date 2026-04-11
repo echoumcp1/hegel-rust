@@ -11,7 +11,7 @@ pub struct VecGenerator<G, T> {
     pub(crate) elements: G,
     pub(crate) min_size: usize,
     pub(crate) max_size: Option<usize>,
-    pub(crate) unique_eq: Option<fn(&T, &T) -> bool>,
+    pub(crate) unique_by: Option<fn(&T, &T) -> bool>,
     pub(crate) _phantom: PhantomData<fn(T)>,
 }
 
@@ -32,7 +32,7 @@ impl<G, T> VecGenerator<G, T> {
 impl<G, T: PartialEq> VecGenerator<G, T> {
     /// Require all elements to be unique.
     pub fn unique(mut self, unique: bool) -> Self {
-        self.unique_eq = if unique {
+        self.unique_by = if unique {
             Some(<T as PartialEq>::eq)
         } else {
             None
@@ -57,7 +57,7 @@ where
             let mut result = Vec::new();
             while collection.more() {
                 let element = self.elements.do_draw(tc);
-                if let Some(eq_fn) = &self.unique_eq {
+                if let Some(eq_fn) = &self.unique_by {
                     if result.iter().any(|existing| eq_fn(existing, &element)) {
                         collection.reject(Some("duplicate element"));
                         continue;
@@ -78,7 +78,7 @@ where
 
         let mut schema = cbor_map! {
             "type" => "list",
-            "unique" => self.unique_eq.is_some(),
+            "unique" => self.unique_by.is_some(),
             "elements" => basic.schema().clone(),
             "min_size" => self.min_size as u64
         };
@@ -102,7 +102,7 @@ pub fn vecs<T, G: Generator<T>>(elements: G) -> VecGenerator<G, T> {
         elements,
         min_size: 0,
         max_size: None,
-        unique_eq: None,
+        unique_by: None,
         _phantom: PhantomData,
     }
 }
