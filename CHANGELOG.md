@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 - 2026-04-12
+
+Fix `vecs(...).unique(true)` not actually enforcing element uniqueness in some cases.
+
+Calling `.unique()` now requires the elements produced by the generator passed to `vecs()` to implement `PartialEq`. This is therefore technically a breaking change, though we expect that the only case where you will need to update your code is when it was previously not working anyway.
+
 ## 0.4.6 - 2026-04-10
 
 Bump our pinned hegel-core to [0.4.0](https://github.com/hegeldev/hegel-core/releases/tag/v0.4.0), incorporating the following change:
