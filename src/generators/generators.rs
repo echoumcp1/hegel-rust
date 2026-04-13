@@ -94,7 +94,7 @@ pub trait Generator<T>: Send + Sync {
     /// use hegel::generators::{self as gs, Generator};
     ///
     /// // Generate a length, then a vec of exactly that length
-    /// let gen = gs::integers::<usize>()
+    /// let generator = gs::integers::<usize>()
     ///     .min_value(1)
     ///     .max_value(10)
     ///     .flat_map(|len| gs::vecs(gs::integers::<i32>())
@@ -151,7 +151,7 @@ pub trait Generator<T>: Send + Sync {
     ///
     /// // Different generator types producing the same output type —
     /// // boxing lets them be stored in a vec and passed to one_of
-    /// let gen = vec![
+    /// let generator = vec![
     ///     gs::integers::<i32>().min_value(0).max_value(10).boxed(),
     ///     gs::integers::<i32>().map(|n| n * 100).boxed(),
     ///     gs::sampled_from(vec![1, 2, 3]).boxed(),
