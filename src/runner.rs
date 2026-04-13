@@ -958,9 +958,7 @@ fn server_log_excerpt() -> Option<String> {
 fn server_crash_message() -> String {
     const BASE: &str = "The hegel server process exited unexpectedly.";
     let log_path_owned = SERVER_LOG_PATH.lock().unwrap().clone();
-    let log_path = log_path_owned
-        .as_deref()
-        .unwrap_or(".hegel/server.log");
+    let log_path = log_path_owned.as_deref().unwrap_or(".hegel/server.log");
     match server_log_excerpt() {
         Some(excerpt) => format!("{BASE}\n\nLast server log entries:\n{excerpt}"),
         None => format!("{BASE}\n\n(No entries found in {log_path})"),
