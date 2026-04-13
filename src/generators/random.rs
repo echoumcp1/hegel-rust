@@ -10,7 +10,8 @@ use super::{Generator, TestCase, binary, integers};
 /// Generator for random number generators. Created by [`randoms()`].
 ///
 /// By default, produces a [`HegelRandom::ArtificialRandom`] backed by the
-/// test case data, which allows Hegel to shrink the randomness.
+/// test case data, which allows Hegel to shrink the randomness. Use
+/// [`use_true_random()`](Self::use_true_random) to get a seeded `StdRng` instead.
 pub struct RandomsGenerator {
     use_true_random: bool,
 }
