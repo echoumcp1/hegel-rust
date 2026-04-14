@@ -131,6 +131,41 @@ fn test_explicit_case_type_annotated_draw_uses_name(tc: TestCase) {
     let _ = x;
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+#[hegel::test(test_cases = 1)]
+#[hegel::explicit_test_case(p = Point { x: 3, y: 4 })]
+fn test_explicit_case_with_user_defined_struct(tc: TestCase) {
+    let p: Point = tc.draw(generators::just(Point { x: 0, y: 0 }));
+    assert_eq!(p, p);
+}
+
+#[hegel::test(test_cases = 1)]
+#[hegel::explicit_test_case(p = Point { x: 3, y: 4 }, q = Point { x: -1, y: 0 })]
+fn test_explicit_case_with_multiple_structs(tc: TestCase) {
+    let p: Point = tc.draw(generators::just(Point { x: 0, y: 0 }));
+    let q: Point = tc.draw(generators::just(Point { x: 0, y: 0 }));
+    let _ = (p, q);
+}
+
+#[hegel::test(test_cases = 1)]
+#[hegel::explicit_test_case(n = vec![1i32, 2, 3].into_iter().sum::<i32>())]
+fn test_explicit_case_with_function_evaluation(tc: TestCase) {
+    let n: i32 = tc.draw(generators::integers());
+    let _ = n;
+}
+
+#[hegel::test(test_cases = 1)]
+#[hegel::explicit_test_case(s = ["hello", "world"].join(" "))]
+fn test_explicit_case_with_method_chain(tc: TestCase) {
+    let s: String = tc.draw(generators::text());
+    let _ = s;
+}
+
 // ============================================================
 // Runtime panic tests
 // ============================================================
@@ -367,4 +402,43 @@ fn test_explicit(tc: hegel::TestCase) {
         .test_file("test_etc.rs", code)
         .expect_failure("fail: 42")
         .cargo_test(&["--test", "test_etc"]);
+}
+
+#[test]
+fn test_macro_explicit_case_with_struct() {
+    let code = r#"
+use hegel::generators as gs;
+
+#[derive(Debug, Clone, PartialEq)]
+struct Point { x: i32, y: i32 }
+
+#[hegel::test(test_cases = 1)]
+#[hegel::explicit_test_case(p = Point { x: 3, y: 4 })]
+fn test_explicit(tc: hegel::TestCase) {
+    let p: Point = tc.draw(gs::just(Point { x: 0, y: 0 }));
+    panic!("fail: {:?}", p);
+}
+"#;
+    TempRustProject::new()
+        .test_file("test_struct.rs", code)
+        .expect_failure(r"fail: Point \{ x: 3, y: 4 \}")
+        .cargo_test(&["--test", "test_struct"]);
+}
+
+#[test]
+fn test_macro_explicit_case_with_computed_expression() {
+    let code = r#"
+use hegel::generators as gs;
+
+#[hegel::test(test_cases = 1)]
+#[hegel::explicit_test_case(n = vec![10i32, 20, 30].into_iter().sum::<i32>())]
+fn test_explicit(tc: hegel::TestCase) {
+    let n: i32 = tc.draw(gs::integers());
+    panic!("fail: {}", n);
+}
+"#;
+    TempRustProject::new()
+        .test_file("test_computed.rs", code)
+        .expect_failure("fail: 60")
+        .cargo_test(&["--test", "test_computed"]);
 }
