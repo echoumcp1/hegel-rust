@@ -275,9 +275,10 @@ struct HegelSession {
     /// brief run_test send/receive; test execution runs concurrently on
     /// per-test streams.
     control: Mutex<Stream>,
-    /// PID of the server subprocess. Exposed via `__test_kill_server` for
-    /// testing server restart behaviour.
-    server_pid: u32,
+    /// The server subprocess. Shared with the monitor thread so that
+    /// `__test_kill_server` can call `child.kill()` directly rather than
+    /// shelling out to the OS `kill` command.
+    child: Arc<Mutex<std::process::Child>>,
 }
 
 impl HegelSession {
@@ -351,20 +352,31 @@ impl HegelSession {
             // nocov end
         }
 
-        let server_pid = child.id();
+        let child_arc = Arc::new(Mutex::new(child));
+        let child_for_monitor = Arc::clone(&child_arc);
 
-        // Monitor thread: detects server crash. The pipe close from
-        // the child exiting will unblock any pending reads.
+        // Monitor thread: reaps the subprocess when it exits and notifies the
+        // connection. Polls try_wait() so the lock is not held while waiting,
+        // leaving it available for __test_kill_server to call kill().
         let conn_for_monitor = Arc::clone(&connection);
         std::thread::spawn(move || {
-            let _ = child.wait();
-            conn_for_monitor.mark_server_exited();
+            loop {
+                {
+                    let mut guard = child_for_monitor.lock().unwrap();
+                    if matches!(guard.try_wait(), Ok(Some(_))) {
+                        drop(guard);
+                        conn_for_monitor.mark_server_exited();
+                        return;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
         });
 
         HegelSession {
             connection,
             control: Mutex::new(control),
-            server_pid,
+            child: child_arc,
         }
     }
 }
@@ -978,12 +990,10 @@ fn handle_channel_error(e: std::io::Error) -> ! {
 pub fn __test_kill_server() {
     let guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(session) = guard.as_ref() {
-        let pid = session.server_pid;
+        let child_arc = Arc::clone(&session.child);
         let conn = Arc::clone(&session.connection);
         drop(guard);
-        let _ = std::process::Command::new("kill")
-            .arg(pid.to_string())
-            .status();
+        let _ = child_arc.lock().unwrap().kill();
         while !conn.server_has_exited() {
             std::thread::yield_now();
         }
