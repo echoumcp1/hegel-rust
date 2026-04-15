@@ -119,10 +119,40 @@ fn main() {
 }
 "#;
 
+/// Returns true if the currently-configured hegel server supports protocol test
+/// modes like `crash_after_handshake`. These modes were added in hegel-core 0.4.2.
+///
+/// When `HEGEL_SERVER_COMMAND` is not set, the library spawns the server via
+/// `uv tool run --from hegel-core=={pinned}`, which is always 0.4.2+ — crash
+/// modes are always available. When it IS set (e.g. the `test-min-protocol` CI
+/// job installs an older release), we query the binary's version to decide.
+fn hegel_supports_crash_modes() -> bool {
+    let Ok(cmd) = std::env::var("HEGEL_SERVER_COMMAND") else {
+        return true;
+    };
+    let Ok(out) = std::process::Command::new(&cmd).arg("--version").output() else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    // Expected format: "hegel (version X.Y.Z)"
+    if let Some(start) = text.find("version ") {
+        let rest = text[start + 8..].trim_start();
+        let ver = rest.split(')').next().unwrap_or("").trim();
+        let parts: Vec<u32> = ver.split('.').filter_map(|p| p.parse().ok()).collect();
+        if parts.len() == 3 {
+            return (parts[0], parts[1], parts[2]) >= (0, 4, 2);
+        }
+    }
+    false
+}
+
 /// When the server writes to its log before crashing, the error message should
 /// include the log content so the user can diagnose the crash.
 #[test]
 fn test_server_crash_includes_log_content() {
+    if !hegel_supports_crash_modes() {
+        return;
+    }
     TempRustProject::new()
         .main_file(HEGEL_TEST_CODE)
         .env(
@@ -137,6 +167,9 @@ fn test_server_crash_includes_log_content() {
 /// error message should still explain that the server crashed.
 #[test]
 fn test_server_crash_empty_log() {
+    if !hegel_supports_crash_modes() {
+        return;
+    }
     TempRustProject::new()
         .main_file(HEGEL_TEST_CODE)
         .env("HEGEL_PROTOCOL_TEST_MODE", "crash_after_handshake")
