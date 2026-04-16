@@ -1,6 +1,8 @@
+#[cfg(unix)]
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
 const UV_INSTALLER: &str = include_str!("uv-install.sh");
 
 /// Returns the path to a `uv` binary.
@@ -14,8 +16,20 @@ const UV_INSTALLER: &str = include_str!("uv-install.sh");
 pub fn find_uv() -> String {
     find_uv_impl(
         find_in_path("uv"),
-        cache_dir_from(std::env::var("XDG_CACHE_HOME").ok(), std::env::home_dir()),
+        cache_dir_from(std::env::var("XDG_CACHE_HOME").ok(), home_dir()),
     )
+}
+
+fn home_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE").ok().map(PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        #[allow(deprecated)]
+        std::env::home_dir()
+    }
 }
 
 fn find_uv_impl(uv_in_path: Option<PathBuf>, cache: PathBuf) -> String {
@@ -49,6 +63,7 @@ fn install_uv_to(_cache: &Path) {
     );
 }
 
+#[cfg(unix)]
 fn install_uv_with_sh(cache: &Path, sh: &str) {
     std::fs::create_dir_all(cache)
         .unwrap_or_else(|e| panic!("Failed to create cache directory {}: {e}", cache.display()));

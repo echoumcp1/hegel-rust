@@ -30,7 +30,7 @@ fn test_failing_test_output() {
         &output.stderr,
         concat!(
             r"let draw_1 = -?\d+;\n",
-            r"thread '.*' \(\d+\) panicked at src/main\.rs:\d+:\d+:\n",
+            r"thread '.*' \(\d+\) panicked at src[/\\]main\.rs:\d+:\d+:\n",
             r"intentional failure: -?\d+",
         ),
     );
@@ -67,7 +67,7 @@ fn test_failing_test_output_with_backtrace() {
             concat!(
                 r"(?s)",
                 r"let draw_1 = -?\d+;\n",
-                r"thread 'main' \(\d+\) panicked at src/main\.rs:\d+:\d+:\n",
+                r"thread 'main' \(\d+\) panicked at src[/\\]main\.rs:\d+:\d+:\n",
                 r"intentional failure: -?\d+\n",
                 r"stack backtrace:\n",
                 r"\s+0: .*\n", // frame 0: panic machinery
@@ -104,7 +104,7 @@ fn test_failing_test_output_with_full_backtrace() {
             concat!(
                 r"(?s)",
                 r"let draw_1 = -?\d+;\n",
-                r"thread 'main' \(\d+\) panicked at src/main\.rs:\d+:\d+:\n",
+                r"thread 'main' \(\d+\) panicked at src[/\\]main\.rs:\d+:\d+:\n",
                 r"intentional failure: -?\d+\n",
                 r"stack backtrace:\n",
                 r"\s+0: .*\n", // starts at frame 0
