@@ -14,7 +14,10 @@ fn test_cache_dir_with_home() {
 
 #[test]
 fn test_find_in_path_finds_known_binary() {
+    #[cfg(unix)]
     assert!(find_in_path("sh").is_some());
+    #[cfg(windows)]
+    assert!(find_in_path("cmd").is_some());
 }
 
 #[test]
@@ -50,7 +53,9 @@ fn test_install_uv_fails_with_bad_sh_command() {
 
 /// Integration test: exercises the full install path using the embedded
 /// installer script. Requires network access to download uv from GitHub.
+/// Unix-only because the embedded installer is a shell script.
 #[test]
+#[cfg(unix)]
 fn test_find_uv_impl_installs_when_missing() {
     let temp = tempfile::tempdir().unwrap();
     let cache = temp.path().to_path_buf();
