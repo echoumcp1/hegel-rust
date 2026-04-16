@@ -112,8 +112,10 @@ fn test_startup_error_message_not_hegel() {
     let exit_status = exit_failure_status();
     #[cfg(unix)]
     let binary = "false";
+    // Use a binary that exits with failure when given --version.
+    // cmd.exe won't work because `cmd.exe --version` succeeds on Windows.
     #[cfg(windows)]
-    let binary = "cmd.exe";
+    let binary = "where.exe";
     let msg = startup_error_message(Some(binary), exit_status);
     assert!(msg.contains("Is this a hegel binary"), "Message: {msg}");
 }
