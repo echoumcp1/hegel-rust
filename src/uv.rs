@@ -22,7 +22,7 @@ fn find_uv_impl(uv_in_path: Option<PathBuf>, cache: PathBuf) -> String {
     if let Some(path) = uv_in_path {
         return path.to_string_lossy().into_owned();
     }
-    let cached = cache.join("uv");
+    let cached = cache.join(UV_BINARY_NAME);
     if cached.is_file() {
         return cached.to_string_lossy().into_owned();
     }
@@ -30,8 +30,23 @@ fn find_uv_impl(uv_in_path: Option<PathBuf>, cache: PathBuf) -> String {
     cached.to_string_lossy().into_owned()
 }
 
+#[cfg(windows)]
+const UV_BINARY_NAME: &str = "uv.exe";
+
+#[cfg(not(windows))]
+const UV_BINARY_NAME: &str = "uv";
+
+#[cfg(unix)]
 fn install_uv_to(cache: &Path) {
     install_uv_with_sh(cache, "sh")
+}
+
+#[cfg(windows)]
+fn install_uv_to(_cache: &Path) {
+    panic!(
+        "uv is required but was not found on PATH. \
+         Install uv: https://docs.astral.sh/uv/getting-started/installation/"
+    );
 }
 
 fn install_uv_with_sh(cache: &Path, sh: &str) {

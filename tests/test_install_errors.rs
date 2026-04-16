@@ -2,8 +2,8 @@ mod common;
 
 use common::project::TempRustProject;
 
-// These tests exercise the uv auto-install path which uses sh + a shell script.
-// The PATH filtering also uses Unix separators (:) and bare binary names without .exe.
+// Unix-only: exercises the sh-based uv auto-install path and uses Unix PATH
+// separators (:) and bare binary names. On Windows, uv must be pre-installed.
 #[test]
 #[cfg(unix)]
 fn test_missing_uv_error_message() {
