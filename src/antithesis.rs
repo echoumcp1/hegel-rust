@@ -8,7 +8,9 @@ use std::path::Path;
 // Antithesis only supports Linux, so the feature is not available on Windows.
 
 #[cfg(all(feature = "antithesis", windows))]
-compile_error!("The `antithesis` feature is not supported on Windows. Antithesis only runs on Linux.");
+compile_error!(
+    "The `antithesis` feature is not supported on Windows. Antithesis only runs on Linux."
+);
 
 pub struct TestLocation {
     pub function: String,
