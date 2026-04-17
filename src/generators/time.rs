@@ -52,8 +52,9 @@ impl Generator<Duration> for DurationGenerator {
 }
 
 /// Generate [`Duration`] values.
-///
-/// See [`DurationGenerator`] for builder methods.
+/// By default, generates durations from zero up to `u64::MAX` nanoseconds
+/// (approximately 584 years). Use builder methods `min_value` and `max_value` 
+/// to constrain the range. See [`DurationGenerator`] for more details.
 ///
 /// # Example
 ///
