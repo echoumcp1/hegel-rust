@@ -78,10 +78,20 @@ pub fn expand_main(attr: TokenStream, item: TokenStream) -> TokenStream {
     let new_body: TokenStream = quote! {
         {
             let __hegel_default_settings: hegel::Settings = #default_settings_expr;
-            let __hegel_settings: hegel::Settings = hegel::__apply_cli_args(
+            let __hegel_settings: hegel::Settings = match hegel::__apply_cli_args(
                 __hegel_default_settings,
                 ::std::env::args(),
-            );
+            ) {
+                hegel::CliOutcome::Success(s) => s,
+                hegel::CliOutcome::Help(msg) => {
+                    println!("{}", msg);
+                    ::std::process::exit(0);
+                }
+                hegel::CliOutcome::ParseError(msg) => {
+                    eprintln!("{}", msg);
+                    ::std::process::exit(2);
+                }
+            };
 
             #(#explicit_blocks)*
 

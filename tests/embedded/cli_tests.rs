@@ -206,3 +206,39 @@ fn test_bool_aliases() {
     let parsed = apply(&["--derandomize", "no"]);
     assert!(!parsed.derandomize);
 }
+
+#[test]
+fn test_invalid_seed_error() {
+    let err = try_apply_cli_args(Settings::new(), s(&["--seed", "abc"])).unwrap_err();
+    match err {
+        CliError::Parse(msg) => assert!(msg.contains("integer or 'none'")),
+        _ => panic!("wrong error kind"),
+    }
+}
+
+#[test]
+fn test_apply_cli_args_success() {
+    match apply_cli_args(Settings::new(), s(&["--test-cases", "13"])) {
+        CliOutcome::Success(settings) => assert_eq!(settings.test_cases, 13),
+        other => panic!("expected Success, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_apply_cli_args_help() {
+    match apply_cli_args(Settings::new(), s(&["--help"])) {
+        CliOutcome::Help(msg) => assert!(msg.contains("Usage:")),
+        other => panic!("expected Help, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_apply_cli_args_parse_error() {
+    match apply_cli_args(Settings::new(), s(&["--not-a-flag"])) {
+        CliOutcome::ParseError(msg) => {
+            assert!(msg.contains("Unknown argument"));
+            assert!(msg.contains("Usage:"));
+        }
+        other => panic!("expected ParseError, got {other:?}"),
+    }
+}

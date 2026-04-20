@@ -7,32 +7,37 @@
 
 use crate::runner::{HealthCheck, Settings, Verbosity};
 
+/// Result of applying CLI overrides. The macro wrapper in `#[hegel::main]`
+/// dispatches on this to print messages and exit the process; keeping the
+/// I/O and process-exit out of this function makes it directly testable.
+#[derive(Debug)]
+pub enum CliOutcome {
+    /// Settings parsed successfully.
+    Success(Settings),
+    /// `--help` / `-h` was passed. Caller should print the message to stdout
+    /// and exit with code 0.
+    Help(String),
+    /// Unknown argument or malformed value. Caller should print the message
+    /// to stderr and exit with a nonzero code.
+    ParseError(String),
+}
+
 /// Apply CLI overrides to `settings`.
 ///
 /// `args` should include the program name at index 0 (i.e., pass
-/// `std::env::args()` directly). Parsing is very simple — unknown arguments
-/// and malformed values cause the process to exit with code 2. `--help` /
-/// `-h` prints usage to stdout and exits with code 0.
+/// `std::env::args()` directly).
 ///
 /// This is called from the entry point produced by `#[hegel::main]`; it is
 /// exported here so that other main wrappers can construct Settings from
 /// the same CLI surface.
-pub fn apply_cli_args<I>(settings: Settings, args: I) -> Settings
+pub fn apply_cli_args<I>(settings: Settings, args: I) -> CliOutcome
 where
     I: IntoIterator<Item = String>,
 {
     match try_apply_cli_args(settings, args) {
-        Ok(s) => s,
-        Err(CliError::Help(msg)) => {
-            println!("{}", msg);
-            std::process::exit(0);
-        }
-        Err(CliError::Parse(msg)) => {
-            eprintln!("{}", msg);
-            eprintln!();
-            eprintln!("{}", usage());
-            std::process::exit(2);
-        }
+        Ok(s) => CliOutcome::Success(s),
+        Err(CliError::Help(msg)) => CliOutcome::Help(msg),
+        Err(CliError::Parse(msg)) => CliOutcome::ParseError(format!("{}\n\n{}", msg, usage())),
     }
 }
 
