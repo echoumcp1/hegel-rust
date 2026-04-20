@@ -1,4 +1,4 @@
-//! Snapshot tests for `TestCase::loop`.
+//! Snapshot tests for `TestCase::repeat`.
 //!
 //! These run in-process via `hegel::Hegel::new(...).run()` and capture the
 //! notes and draw output of the final (shrunk) failing replay using
@@ -45,7 +45,7 @@ where
 #[test]
 fn snapshot_loop_fails_on_first_iteration() {
     let output = capture_loop_output(hegel::rewrite_draws!(|tc: hegel::TestCase| {
-        tc.r#loop(|tc| {
+        tc.repeat(|tc| {
             let x: i32 = tc.draw(gs::integers::<i32>());
             assert!(x < 10);
         });
@@ -60,7 +60,7 @@ fn snapshot_loop_fails_on_first_iteration() {
 fn snapshot_loop_runs_multiple_iterations_before_failing() {
     let output = capture_loop_output(hegel::rewrite_draws!(|tc: hegel::TestCase| {
         let mut count = 0;
-        tc.r#loop(|_| {
+        tc.repeat(|_| {
             count += 1;
             assert!(count < 3);
         });
@@ -75,7 +75,7 @@ fn snapshot_loop_runs_multiple_iterations_before_failing() {
 #[test]
 fn snapshot_loop_with_multiple_draws_per_iteration() {
     let output = capture_loop_output(hegel::rewrite_draws!(|tc: hegel::TestCase| {
-        tc.r#loop(|tc| {
+        tc.repeat(|tc| {
             let x: i32 = tc.draw(gs::integers::<i32>().min_value(0).max_value(100));
             let y: i32 = tc.draw(gs::integers::<i32>().min_value(0).max_value(100));
             assert!(x + y < 5);
@@ -93,7 +93,7 @@ fn snapshot_loop_accumulates_state_across_iterations() {
     let output = capture_loop_output(hegel::rewrite_draws!(|tc: hegel::TestCase| {
         let total: Rc<Cell<i32>> = Rc::new(Cell::new(0));
         let total_inside = total.clone();
-        tc.r#loop(move |tc| {
+        tc.repeat(move |tc| {
             let n: i32 = tc.draw(gs::integers::<i32>().min_value(1).max_value(10));
             total_inside.set(total_inside.get() + n);
             assert!(total_inside.get() < 5);
@@ -115,7 +115,7 @@ fn loop_recovers_from_assumption_failures() {
         Hegel::new(|tc| {
             let mut iteration = 0;
             let mut successes = 0;
-            tc.r#loop(|tc| {
+            tc.repeat(|tc| {
                 iteration += 1;
                 if iteration % 2 == 1 {
                     tc.assume(false);
@@ -141,13 +141,13 @@ fn loop_recovers_from_assumption_failures() {
 #[test]
 fn loop_terminates_when_body_never_panics() {
     // With a body that always succeeds, the loop should still terminate (via
-    // the backend exhausting its budget and raising StopTest). If r#loop did
+    // the backend exhausting its budget and raising StopTest). If repeat did
     // not catch StopTest, this test would fail with an Overrun.
     let iterations = Rc::new(Cell::new(0u64));
     let iterations_inside = iterations.clone();
     Hegel::new(move |tc| {
         let iterations = iterations_inside.clone();
-        tc.r#loop(move |_| {
+        tc.repeat(move |_| {
             iterations.set(iterations.get() + 1);
         });
     })

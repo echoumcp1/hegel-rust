@@ -296,14 +296,14 @@ impl TestCase {
     /// #[hegel::test]
     /// fn my_test(tc: hegel::TestCase) {
     ///     let mut total: i32 = 0;
-    ///     tc.r#loop(|tc| {
+    ///     tc.repeat(|tc| {
     ///         let n: i32 = tc.draw(gs::integers().min_value(0).max_value(10));
     ///         total += n;
     ///         assert!(total >= 0);
     ///     });
     /// }
     /// ```
-    pub fn r#loop<F: FnMut(&TestCase)>(&self, mut body: F) {
+    pub fn repeat<F: FnMut(&TestCase)>(&self, mut body: F) {
         use crate::generators::integers;
 
         // Draw min_size uniformly over the full usize range. This is a
