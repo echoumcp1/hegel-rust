@@ -1,8 +1,10 @@
 pub use crate::backend::{DataSource, DataSourceError};
 use crate::generators::Generator;
 use ciborium::Value;
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::rc::Rc;
 
 use crate::generators::value;
@@ -55,7 +57,7 @@ pub(crate) struct DrawState {
 pub(crate) struct TestCaseLocalData {
     span_depth: usize,
     indent: usize,
-    on_draw: Rc<dyn Fn(&str)>,
+    on_draw: OutputSink,
 }
 
 /// A handle to the current test case.
@@ -95,12 +97,44 @@ impl std::fmt::Debug for TestCase {
     }
 }
 
+/// A callback invoked for each line of draw/note output during the final replay.
+pub(crate) type OutputSink = Rc<dyn Fn(&str)>;
+
+thread_local! {
+    static OUTPUT_OVERRIDE: RefCell<Option<OutputSink>> = const { RefCell::new(None) };
+}
+
+/// Install a custom output sink for the duration of `f`, replacing the usual
+/// `eprintln!` behavior of draw and note output. Intended for tests that want
+/// to capture what a test case would print.
+///
+/// While active, notes and draws from the final replay go to `sink` instead of
+/// stderr. Non-final test cases still drop their draw/note output as usual.
+#[doc(hidden)]
+pub fn with_output_override<R>(sink: OutputSink, f: impl FnOnce() -> R) -> R {
+    let prev = OUTPUT_OVERRIDE.with(|cell| cell.borrow_mut().replace(sink));
+    let result = f();
+    OUTPUT_OVERRIDE.with(|cell| *cell.borrow_mut() = prev);
+    result
+}
+
+fn panic_message(payload: &Box<dyn Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        s.to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "Unknown panic".to_string() // nocov
+    }
+}
+
 impl TestCase {
     pub(crate) fn new(data_source: Box<dyn DataSource>, is_last_run: bool) -> Self {
-        let on_draw: Rc<dyn Fn(&str)> = if is_last_run {
-            Rc::new(|msg| eprintln!("{}", msg))
-        } else {
-            Rc::new(|_| {})
+        let override_sink = OUTPUT_OVERRIDE.with(|cell| cell.borrow().clone());
+        let on_draw: OutputSink = match override_sink {
+            Some(sink) if is_last_run => sink,
+            _ if is_last_run => Rc::new(|msg| eprintln!("{}", msg)),
+            _ => Rc::new(|_| {}),
         };
         TestCase {
             global: Rc::new(TestCaseGlobalData {
@@ -234,9 +268,78 @@ impl TestCase {
     /// }
     /// ```
     pub fn note(&self, message: &str) {
-        if self.global.is_last_run {
-            let indent = self.local.borrow().indent; // nocov
-            eprintln!("{:indent$}{}", "", message, indent = indent); // nocov
+        if !self.global.is_last_run {
+            return;
+        }
+        let local = self.local.borrow();
+        let indent = local.indent;
+        (local.on_draw)(&format!("{:indent$}{}", "", message, indent = indent));
+    }
+
+    /// Run `body` in a loop that logically never terminates but can shrink to a
+    /// finite number of iterations.
+    ///
+    /// The loop is driven by the backend's collection API so that shrinking can
+    /// reduce the number of iterations, while normal runs continue until the
+    /// backend runs out of data. If an assumption inside `body` fails, that
+    /// iteration is skipped and the loop continues with the next one, matching
+    /// the behavior of rules in stateful testing.
+    ///
+    /// At the start of each iteration a `// Loop iteration N` note is emitted
+    /// into the failing-test replay output.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use hegel::generators as gs;
+    ///
+    /// #[hegel::test]
+    /// fn my_test(tc: hegel::TestCase) {
+    ///     let mut total: i32 = 0;
+    ///     tc.r#loop(|tc| {
+    ///         let n: i32 = tc.draw(gs::integers().min_value(0).max_value(10));
+    ///         total += n;
+    ///         assert!(total >= 0);
+    ///     });
+    /// }
+    /// ```
+    pub fn r#loop<F: FnMut(&TestCase)>(&self, mut body: F) {
+        use crate::generators::integers;
+
+        // Draw min_size uniformly over the full usize range. This is a
+        // shrinking trick: most of the time the collection is forced huge
+        // (making the loop behave like an infinite loop), but during shrinking
+        // the backend can reduce min_size to pick a finite iteration count.
+        let raw = self.draw_silent(integers::<usize>());
+        // hegel-core's collection machinery hits an internal AssertionError
+        // around float precision when min_size approaches 2^53. Cap well below
+        // that so any huge draw still behaves like "infinite" (the backend's
+        // data budget runs out long before this many iterations) without
+        // tripping the bug.
+        const MAX_SAFE_MIN_SIZE: usize = 1 << 40;
+        let min_size = std::cmp::min(raw, MAX_SAFE_MIN_SIZE);
+
+        let mut collection = Collection::new(self, min_size, None);
+        let mut iteration: u64 = 0;
+
+        while collection.more() {
+            iteration += 1;
+            self.note(&format!("// Loop iteration {}", iteration));
+
+            let body_tc = self.child(2);
+            let result = catch_unwind(AssertUnwindSafe(|| body(&body_tc)));
+
+            match result {
+                Ok(()) => {}
+                Err(e) => {
+                    let msg = panic_message(&e);
+                    if msg == STOP_TEST_STRING {
+                        break;
+                    } else if msg != ASSUME_FAIL_STRING {
+                        resume_unwind(e);
+                    }
+                }
+            }
         }
     }
 
