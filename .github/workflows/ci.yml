@@ -66,24 +66,15 @@ jobs:
         with:
           tools: just uv
 
-      # On Windows, hegel-rust can't auto-install hegel-core, so we install it
-      # explicitly and point the tests at it via HEGEL_SERVER_COMMAND.
+      # hegel-rust's bundled uv installer is a sh script, so it can't bootstrap
+      # uv on Windows. Set up uv here; once it's on PATH, hegel-rust drives
+      # hegel-core installation via uv the same way it does on Linux.
       - if: runner.os == 'Windows'
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
-      - if: runner.os == 'Windows'
-        name: Install hegel
-        run: uv tool install hegel-core
-      - if: runner.os == 'Windows'
-        name: Find hegel binary
-        id: hegel
-        run: |
-          $hegelPath = (Get-Command hegel).Source
-          echo "path=$hegelPath" >> $env:GITHUB_OUTPUT
 
       - name: Run tests
         env:
           RUST_BACKTRACE: "1"
-          HEGEL_SERVER_COMMAND: ${{ steps.hegel.outputs.path }}
         run: cargo test
 
   test-all-features:
@@ -125,20 +116,10 @@ jobs:
 
       - if: runner.os == 'Windows'
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
-      - if: runner.os == 'Windows'
-        name: Install hegel
-        run: uv tool install hegel-core
-      - if: runner.os == 'Windows'
-        name: Find hegel binary
-        id: hegel
-        run: |
-          $hegelPath = (Get-Command hegel).Source
-          echo "path=$hegelPath" >> $env:GITHUB_OUTPUT
 
       - name: Run tests with all features
         env:
           RUST_BACKTRACE: "1"
-          HEGEL_SERVER_COMMAND: ${{ steps.hegel.outputs.path }}
         run: cargo test ${{ matrix.features }}
 
   test-min-protocol:
