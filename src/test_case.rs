@@ -304,7 +304,7 @@ impl TestCase {
     /// }
     /// ```
     pub fn repeat<F: FnMut(&TestCase)>(&self, mut body: F) {
-        use crate::generators::integers;
+        use crate::generators::{booleans, integers};
 
         // Draw min_size uniformly over the full usize range. This is a
         // shrinking trick: most of the time the collection is forced huge
@@ -336,6 +336,13 @@ impl TestCase {
                     if msg == STOP_TEST_STRING {
                         break;
                     } else if msg != ASSUME_FAIL_STRING {
+                        // Shrinking hack: draw a sentinel boolean before
+                        // re-raising the panic. If the shrinker later picks a
+                        // test case that doesn't trigger this panic, the
+                        // sentinel takes the place of the collection's stop
+                        // draw at this position, so the loop is always seen to
+                        // stop normally in the uninteresting shrunk case.
+                        self.draw_silent(booleans());
                         resume_unwind(e);
                     }
                 }
