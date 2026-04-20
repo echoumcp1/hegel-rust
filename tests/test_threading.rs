@@ -34,6 +34,34 @@ fn _assert_test_case_is_not_sync() {
     impl<T: ?Sized + Sync> AmbiguousIfSync<u8> for T {}
     <TestCase as AmbiguousIfSync<_>>::some_item();
 }
+
+/// Compile-time check: `ExplicitTestCase` does *not* implement `Send`.
+///
+/// Explicit test cases hold user values as `Box<dyn Any>` inside a `RefCell`,
+/// neither of which is `Send` or `Sync`. This means a test body that spawns a
+/// thread touching `tc` cannot be combined with `#[hegel::explicit_test_case]`
+/// — the macro rebinds `tc` to `&ExplicitTestCase` for the explicit run and
+/// `&ExplicitTestCase` is not `Send`.
+#[allow(dead_code)]
+fn _assert_explicit_test_case_is_not_send() {
+    trait AmbiguousIfSend<A> {
+        fn some_item() {}
+    }
+    impl<T: ?Sized> AmbiguousIfSend<()> for T {}
+    impl<T: ?Sized + Send> AmbiguousIfSend<u8> for T {}
+    <hegel::ExplicitTestCase as AmbiguousIfSend<_>>::some_item();
+}
+
+/// Compile-time check: `ExplicitTestCase` does *not* implement `Sync`.
+#[allow(dead_code)]
+fn _assert_explicit_test_case_is_not_sync() {
+    trait AmbiguousIfSync<A> {
+        fn some_item() {}
+    }
+    impl<T: ?Sized> AmbiguousIfSync<()> for T {}
+    impl<T: ?Sized + Sync> AmbiguousIfSync<u8> for T {}
+    <hegel::ExplicitTestCase as AmbiguousIfSync<_>>::some_item();
+}
 #[hegel::test(test_cases = 20)]
 fn test_spawn_thread_with_clone_does_generation(tc: TestCase) {
     let tc_clone = tc.clone();
