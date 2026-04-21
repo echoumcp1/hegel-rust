@@ -135,12 +135,12 @@ fn test_big_uintegers_finds_max_boundary() {
 
 #[test]
 fn test_rationals_denom_positive() {
-    assert_all_examples(gs::rationals(), |r| *r.denom() > 0);
+    assert_all_examples(gs::rationals::<i32>(), |r| *r.denom() > 0);
 }
 
 #[test]
 fn test_rationals_reduced() {
-    assert_all_examples(gs::rationals(), |r| {
+    assert_all_examples(gs::rationals::<i32>(), |r| {
         // Ratio::new always reduces to lowest terms
         use num_integer::Integer;
         r.numer().gcd(r.denom()) == 1
@@ -149,44 +149,37 @@ fn test_rationals_reduced() {
 
 #[test]
 fn test_rationals_finds_zero() {
-    find_any(gs::rationals(), |r| r.is_zero());
+    find_any(gs::rationals::<i32>(), |r| r.is_zero());
 }
 
 #[test]
 fn test_rationals_finds_negative() {
-    find_any(gs::rationals(), |r| *r.numer() < 0);
+    find_any(gs::rationals::<i32>(), |r| *r.numer() < 0);
 }
 
 #[test]
 fn test_rationals_finds_whole_number() {
-    find_any(gs::rationals(), |r| *r.denom() == 1 && *r.numer() != 0);
+    find_any(gs::rationals::<i32>(), |r| {
+        *r.denom() == 1 && *r.numer() != 0
+    });
 }
 
 #[test]
 fn test_rationals_custom_numerator_denominator() {
-    let generator = gs::rationals()
-        .numerator(gs::integers::<i64>().min_value(0).max_value(100))
-        .denominator(gs::integers::<i64>().min_value(1).max_value(10));
-    assert_all_examples(generator, |r| *r.numer() >= 0 && *r.denom() >= 1);
-}
-
-// ---------------------------------------------------------------------------
-// Big Rationals
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_big_rationals_denom_positive() {
-    assert_all_examples(gs::big_rationals(), |r| *r.denom() > BigInt::zero());
-}
-
-#[test]
-fn test_big_rationals_finds_zero() {
-    find_any(gs::big_rationals(), |r| r.is_zero());
-}
-
-#[test]
-fn test_big_rationals_finds_negative() {
-    find_any(gs::big_rationals(), |r| *r.numer() < BigInt::zero());
+    let generator = gs::rationals::<BigInt>()
+        .numerator(
+            gs::integers::<BigInt>()
+                .min_value(BigInt::from(0))
+                .max_value(BigInt::from(100)),
+        )
+        .denominator(
+            gs::integers::<BigInt>()
+                .min_value(BigInt::from(1))
+                .max_value(BigInt::from(10)),
+        );
+    assert_all_examples(generator, |r| {
+        *r.numer() >= BigInt::zero() && *r.denom() >= BigInt::one()
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +189,7 @@ fn test_big_rationals_finds_negative() {
 #[test]
 fn test_big_integers_map_uses_basic() {
     use hegel::generators::Generator;
-    let generator = gs::big_integers()
+    let generator = gs::integers::<BigInt>()
         .min_value(BigInt::from(0))
         .max_value(BigInt::from(100))
         .map(|n| n + BigInt::one());
@@ -212,7 +205,7 @@ fn test_big_integers_map_uses_basic() {
 #[test]
 fn test_big_uintegers_map_uses_basic() {
     use hegel::generators::Generator;
-    let generator = gs::big_uintegers()
+    let generator = gs::integers::<BigUint>()
         .min_value(BigUint::from(0u32))
         .max_value(BigUint::from(100u32))
         .map(|n| n + BigUint::one());
