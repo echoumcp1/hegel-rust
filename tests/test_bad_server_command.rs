@@ -1,6 +1,7 @@
 mod common;
 
 use common::project::TempRustProject;
+use common::tempdir::mktemp_dir;
 
 const HEGEL_CODE: &str = r#"
 fn main() {
@@ -22,8 +23,7 @@ fn test_non_hegel_command_gives_informative_error() {
 #[test]
 fn test_wrong_version_hegel_gives_informative_error() {
     // Create a script that pretends to be an old hegel version
-    let script_dir = std::env::temp_dir().join("hegel_test_fake_binary");
-    std::fs::create_dir_all(&script_dir).unwrap();
+    let script_dir = mktemp_dir("fake_binary");
 
     #[cfg(unix)]
     let script_path = {
@@ -81,8 +81,7 @@ fn test_bare_name_not_on_path_gives_informative_error() {
 #[test]
 #[cfg(unix)]
 fn test_not_executable_gives_informative_error() {
-    let dir = std::env::temp_dir().join("hegel_test_not_executable");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = mktemp_dir("not_executable");
     let script_path = dir.join("not_executable_hegel");
     std::fs::write(&script_path, "#!/bin/sh\nexit 0\n").unwrap();
 
@@ -100,8 +99,7 @@ fn test_not_executable_gives_informative_error() {
 #[cfg(unix)]
 fn test_server_hangs_gives_bad_virtualenv_message() {
     // Script that closes stdout (so handshake fails) but stays alive
-    let dir = std::env::temp_dir().join("hegel_test_hanging");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = mktemp_dir("hanging");
     let script_path = dir.join("hanging_hegel");
     std::fs::write(&script_path, "#!/bin/sh\nexec 1>&-\nsleep 10\n").unwrap();
 
@@ -118,8 +116,7 @@ fn test_server_hangs_gives_bad_virtualenv_message() {
 #[test]
 #[cfg(unix)]
 fn test_server_log_included_in_error() {
-    let dir = std::env::temp_dir().join("hegel_test_stderr");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = mktemp_dir("stderr");
     let script_path = dir.join("stderr_hegel");
     std::fs::write(
         &script_path,
