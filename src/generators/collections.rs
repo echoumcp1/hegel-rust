@@ -11,7 +11,7 @@ pub struct VecGenerator<G, T> {
     pub(crate) elements: G,
     pub(crate) min_size: usize,
     pub(crate) max_size: Option<usize>,
-    pub(crate) unique: bool,
+    pub(crate) unique_by: Option<fn(&T, &T) -> bool>,
     pub(crate) _phantom: PhantomData<fn(T)>,
 }
 
@@ -27,10 +27,16 @@ impl<G, T> VecGenerator<G, T> {
         self.max_size = Some(max_size);
         self
     }
+}
 
+impl<G, T: PartialEq> VecGenerator<G, T> {
     /// Require all elements to be unique.
     pub fn unique(mut self, unique: bool) -> Self {
-        self.unique = unique;
+        self.unique_by = if unique {
+            Some(<T as PartialEq>::eq)
+        } else {
+            None
+        };
         self
     }
 }
@@ -50,7 +56,14 @@ where
             let mut collection = Collection::new(tc, self.min_size, self.max_size);
             let mut result = Vec::new();
             while collection.more() {
-                result.push(self.elements.do_draw(tc));
+                let element = self.elements.do_draw(tc);
+                if let Some(eq_fn) = &self.unique_by {
+                    if result.iter().any(|existing| eq_fn(existing, &element)) {
+                        collection.reject(Some("duplicate element"));
+                        continue;
+                    }
+                }
+                result.push(element);
             }
             tc.stop_span(false);
             result
@@ -65,7 +78,7 @@ where
 
         let mut schema = cbor_map! {
             "type" => "list",
-            "unique" => self.unique,
+            "unique" => self.unique_by.is_some(),
             "elements" => basic.schema().clone(),
             "min_size" => self.min_size as u64
         };
@@ -84,12 +97,28 @@ where
 }
 
 /// Generate vectors with elements from the given generator.
+///
+/// See [`VecGenerator`] for builder methods.
+///
+/// # Example
+///
+/// ```no_run
+/// use hegel::generators as gs;
+///
+/// #[hegel::test]
+/// fn my_test(tc: hegel::TestCase) {
+///     let v: Vec<i32> = tc.draw(gs::vecs(gs::integers())
+///         .min_size(1)
+///         .max_size(10));
+///     assert!(!v.is_empty() && v.len() <= 10);
+/// }
+/// ```
 pub fn vecs<T, G: Generator<T>>(elements: G) -> VecGenerator<G, T> {
     VecGenerator {
         elements,
         min_size: 0,
         max_size: None,
-        unique: false,
+        unique_by: None,
         _phantom: PhantomData,
     }
 }
@@ -174,6 +203,8 @@ where
 }
 
 /// Generate hash sets with elements from the given generator.
+///
+/// See [`HashSetGenerator`] for builder methods.
 pub fn hashsets<T, G: Generator<T>>(elements: G) -> HashSetGenerator<G, T> {
     HashSetGenerator {
         elements,
@@ -290,6 +321,8 @@ where
 }
 
 /// Generate hash maps.
+///
+/// See [`HashMapGenerator`] for builder methods.
 ///
 /// # Example
 ///
@@ -436,6 +469,8 @@ impl Generator<Value> for FixedDictGenerator<'_> {
 }
 
 /// Create a generator for dictionaries with fixed keys.
+///
+/// See [`FixedDictBuilder`] for builder methods.
 ///
 /// # Example
 ///

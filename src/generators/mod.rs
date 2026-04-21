@@ -1,10 +1,10 @@
 //! Generators for producing test data.
 //!
-//! Each generator is created via a factory function (e.g. [`integers()`], [`text()`])
-//! that returns a builder struct. Most builders have methods for constraining the
-//! output (e.g. `min_value`, `max_size`). All builders implement [`Generator<T>`],
-//! which provides combinators like [`map`](Generator::map), [`filter`](Generator::filter),
-//! and [`flat_map`](Generator::flat_map).
+//! Start with the [factory functions below](#functions) — each one returns a builder.
+//! Most builders have methods for constraining the output (e.g. `.min_value()`, `.max_size()`).
+//! All generators implement [`Generator<T>`], which provides combinators like
+//! [`map`](Generator::map), [`filter`](Generator::filter), and
+//! [`flat_map`](Generator::flat_map).
 
 mod collections;
 mod combinators;
@@ -27,7 +27,7 @@ pub(crate) mod value;
 
 #[doc(hidden)]
 pub use crate::test_case::{
-    Collection, StopTestError, TestCase, deserialize_value, generate_from_schema, generate_raw,
+    Collection, DataSourceError, TestCase, deserialize_value, generate_from_schema, generate_raw,
     labels,
 };
 
@@ -51,9 +51,10 @@ pub use generators::{BoxedGenerator, Filtered, FlatMapped, Generator, Mapped};
 pub use misc::{BoolGenerator, JustGenerator, booleans, just, unit};
 pub use numeric::{Float, FloatGenerator, Integer, IntegerGenerator, floats, integers};
 pub use strings::{
-    BinaryGenerator, DateGenerator, DateTimeGenerator, DomainGenerator, EmailGenerator,
-    IpAddressGenerator, RegexGenerator, TextGenerator, TimeGenerator, UrlGenerator, binary, dates,
-    datetimes, domains, emails, from_regex, ip_addresses, text, times, urls,
+    BinaryGenerator, CharactersGenerator, DateGenerator, DateTimeGenerator, DomainGenerator,
+    EmailGenerator, IpAddressGenerator, RegexGenerator, TextGenerator, TimeGenerator, UrlGenerator,
+    binary, characters, dates, datetimes, domains, emails, from_regex, ip_addresses, text, times,
+    urls,
 };
 pub use time::{DurationGenerator, durations};
 #[doc(hidden)]

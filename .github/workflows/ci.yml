@@ -43,12 +43,16 @@ jobs:
         run: cargo package --workspace
 
   test:
-    name: test (${{ matrix.rust }})
-    runs-on: ubuntu-latest
+    # Keep the name matching the branch-protection required checks on Linux
+    # (`test (1.86)` / `test (stable)`); Windows variants get a suffix.
+    name: test (${{ matrix.rust }}${{ matrix.os == 'windows-latest' && ', windows' || '' }})
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         rust: ["1.86", stable]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -67,13 +71,28 @@ jobs:
         run: just check-tests
 
   test-all-features:
-    name: test-all-features (${{ matrix.rust }})
-    runs-on: ubuntu-latest
+    name: test-all-features (${{ matrix.rust }}${{ matrix.os == 'windows-latest' && ', windows' || '' }})
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     strategy:
+      fail-fast: false
       matrix:
-        rust: ["1.86", stable]
+        include:
+          # On Windows, --all-features would enable `antithesis`, which triggers
+          # a compile_error! on Windows. Drop back to just `rand`.
+          - os: windows-latest
+            rust: "1.86"
+            recipe: check-tests-rand-feature
+          - os: windows-latest
+            rust: stable
+            recipe: check-tests-rand-feature
+          - os: ubuntu-latest
+            rust: "1.86"
+            recipe: check-tests-all-features
+          - os: ubuntu-latest
+            rust: stable
+            recipe: check-tests-all-features
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -87,8 +106,44 @@ jobs:
         with:
           tools: just uv
 
-      - name: Run tests with all features
-        run: just check-tests-all-features
+      - name: Run tests
+        run: just ${{ matrix.recipe }}
+
+  test-min-protocol:
+    name: test-min-protocol
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - uses: ./.github/actions/install-tools
+        with:
+          tools: just uv
+
+      - id: min-version
+        run: |
+          MIN_PROTOCOL=$(grep -oE 'SUPPORTED_PROTOCOL_VERSIONS.*"[0-9.]+"' src/runner.rs | grep -oE '"[0-9.]+"' | head -1 | tr -d '"')
+
+          VERSIONS_JSON=$(curl -sf https://hegel.dev/api/versions.json)
+
+          MIN_CORE=$(echo "$VERSIONS_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['$MIN_PROTOCOL'])")
+          echo "Minimum supported protocol version: $MIN_PROTOCOL"
+          echo "Minimum hegel-core version: $MIN_CORE"
+          echo "min_core=$MIN_CORE" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests with minimum protocol version
+        env:
+          MIN_CORE: ${{ steps.min-version.outputs.min_core }}
+        run: |
+          uv tool install "hegel-core==$MIN_CORE"
+          HEGEL_SERVER_COMMAND=$(which hegel) just check-tests
 
   docs:
     name: docs
@@ -160,17 +215,27 @@ jobs:
       contents: write  # needed for ratchet auto-update
       pull-requests: write  # needed for creating PRs on main
     steps:
-      # persist-credentials needed for git push in the auto-update step below
       # For fork PRs, head_ref points to a branch that doesn't exist on the base repo,
       # so we fall back to the default ref (the merge commit).
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2 # zizmor: ignore[artipacked]
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-        with:
-          ref: ${{ github.head_ref || github.ref }}
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         with:
           persist-credentials: false
+
+      # use an app token so that the commit re-triggers CI. GITHUB_TOKEN pushes don't trigger CI
+      - name: Generate app token
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        id: app-token
+        with:
+          app-id: ${{ vars.HEGEL_RELEASE_APP_ID }}
+          private-key: ${{ secrets.HEGEL_RELEASE_APP_PRIVATE_KEY }}
+          repositories: hegel-rust
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2 # zizmor: ignore[artipacked]
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal -c llvm-tools-preview
@@ -189,7 +254,7 @@ jobs:
       - name: Auto-update coverage annotations and ratchet
         if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           if git diff --quiet; then
             echo "No coverage annotation changes needed"
@@ -199,7 +264,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -u
-          git add .github/coverage-ratchet.json
 
           if git diff --cached --quiet; then
             exit 0

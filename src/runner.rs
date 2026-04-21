@@ -1,33 +1,282 @@
 use crate::antithesis::{TestLocation, is_running_in_antithesis};
+use crate::backend::{DataSource, DataSourceError, TestCaseResult, TestRunResult, TestRunner};
 use crate::control::{currently_in_test_context, with_test_context};
-use crate::protocol::{Connection, HANDSHAKE_STRING, SERVER_CRASHED_MESSAGE, Stream};
-use crate::test_case::{ASSUME_FAIL_STRING, STOP_TEST_STRING, TestCase};
+use crate::protocol::{Connection, HANDSHAKE_STRING, Stream};
+use crate::test_case::{ASSUME_FAIL_STRING, LOOP_DONE_STRING, STOP_TEST_STRING, TestCase};
 use ciborium::Value;
 
-use crate::utils::cbor_utils::{as_bool, as_text, as_u64, cbor_map, map_get};
+use crate::utils::cbor_utils::{as_bool, as_text, as_u64, cbor_map, map_get, map_insert};
 use std::backtrace::{Backtrace, BacktraceStatus};
 use std::cell::RefCell;
 use std::fs::{File, OpenOptions};
 use std::panic::{self, AssertUnwindSafe, catch_unwind};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, Once};
+use std::sync::{Arc, LazyLock, Mutex, Once};
 use std::time::{Duration, Instant};
 
-const SUPPORTED_PROTOCOL_VERSIONS: (f64, f64) = (0.8, 0.8);
-const HEGEL_SERVER_VERSION: &str = "0.3.0";
+const SUPPORTED_PROTOCOL_VERSIONS: (&str, &str) = ("0.10", "0.10");
+const HEGEL_SERVER_VERSION: &str = "0.4.4";
 const HEGEL_SERVER_COMMAND_ENV: &str = "HEGEL_SERVER_COMMAND";
 const HEGEL_SERVER_DIR: &str = ".hegel";
-static SERVER_LOG_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+static SERVER_LOG_PATH: Mutex<Option<String>> = Mutex::new(None);
 static LOG_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
-static SESSION: std::sync::OnceLock<HegelSession> = std::sync::OnceLock::new();
+static SESSION: Mutex<Option<Arc<HegelSession>>> = Mutex::new(None);
 
 static PANIC_HOOK_INIT: Once = Once::new();
 
+// ─── ServerDataSource ──────────────────────────────────────────────────────────
+
+static PROTOCOL_DEBUG: LazyLock<bool> = LazyLock::new(|| {
+    matches!(
+        std::env::var("HEGEL_PROTOCOL_DEBUG")
+            .unwrap_or_default()
+            .to_lowercase()
+            .as_str(),
+        "1" | "true"
+    )
+});
+
+/// Backend implementation that communicates with the hegel-core server
+/// over a multiplexed stream.
+pub(crate) struct ServerDataSource {
+    connection: Arc<Connection>,
+    stream: Mutex<Stream>,
+    aborted: AtomicBool,
+    verbosity: Verbosity,
+}
+
+impl ServerDataSource {
+    pub(crate) fn new(connection: Arc<Connection>, stream: Stream, verbosity: Verbosity) -> Self {
+        ServerDataSource {
+            connection,
+            stream: Mutex::new(stream),
+            aborted: AtomicBool::new(false),
+            verbosity,
+        }
+    }
+
+    fn send_request(&self, command: &str, payload: &Value) -> Result<Value, DataSourceError> {
+        if self.aborted.load(Ordering::SeqCst) {
+            return Err(DataSourceError::StopTest);
+        }
+        let debug = *PROTOCOL_DEBUG || self.verbosity == Verbosity::Debug;
+
+        let mut entries = vec![(
+            Value::Text("command".to_string()),
+            Value::Text(command.to_string()),
+        )];
+
+        if let Value::Map(map) = payload {
+            for (k, v) in map {
+                entries.push((k.clone(), v.clone()));
+            }
+        }
+
+        let request = Value::Map(entries);
+
+        if debug {
+            eprintln!("REQUEST: {:?}", request);
+        }
+
+        let result = self
+            .stream
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .request_cbor(&request);
+
+        match result {
+            Ok(response) => {
+                if debug {
+                    eprintln!("RESPONSE: {:?}", response);
+                }
+                Ok(response)
+            }
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("UnsatisfiedAssumption") {
+                    // nocov start
+                    if debug {
+                        eprintln!("RESPONSE: UnsatisfiedAssumption");
+                    }
+                    Err(DataSourceError::Assume)
+                    // nocov end
+                } else if error_msg.contains("overflow")
+                    || error_msg.contains("StopTest")
+                    || error_msg.contains("stream is closed")
+                {
+                    if debug {
+                        eprintln!("RESPONSE: StopTest/overflow"); // nocov
+                    }
+                    self.stream
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mark_closed();
+                    self.aborted.store(true, Ordering::SeqCst);
+                    Err(DataSourceError::StopTest)
+                // nocov start
+                } else if error_msg.contains("FlakyStrategyDefinition")
+                    || error_msg.contains("FlakyReplay")
+                // nocov end
+                {
+                    self.stream
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mark_closed();
+                    self.aborted.store(true, Ordering::SeqCst);
+                    Err(DataSourceError::StopTest)
+                } else if self.connection.server_has_exited() {
+                    panic!("{}", server_crash_message()); // nocov
+                } else {
+                    Err(DataSourceError::ServerError(e.to_string()))
+                }
+            }
+        }
+    }
+}
+
+impl DataSource for ServerDataSource {
+    fn generate(&self, schema: &Value) -> Result<Value, DataSourceError> {
+        self.send_request("generate", &cbor_map! {"schema" => schema.clone()})
+    }
+
+    fn start_span(&self, label: u64) -> Result<(), DataSourceError> {
+        self.send_request("start_span", &cbor_map! {"label" => label})?;
+        Ok(())
+    }
+
+    fn stop_span(&self, discard: bool) -> Result<(), DataSourceError> {
+        self.send_request("stop_span", &cbor_map! {"discard" => discard})?;
+        Ok(())
+    }
+
+    fn new_collection(
+        &self,
+        min_size: u64,
+        max_size: Option<u64>,
+    ) -> Result<String, DataSourceError> {
+        let mut payload = cbor_map! {
+            "min_size" => min_size
+        };
+        if let Some(max) = max_size {
+            map_insert(&mut payload, "max_size", max);
+        }
+        let response = self.send_request("new_collection", &payload)?;
+        match response {
+            Value::Integer(i) => {
+                let n: i128 = i.into();
+                Ok(n.to_string())
+            }
+            // nocov start
+            _ => panic!(
+                "Expected integer response from new_collection, got {:?}",
+                response
+            ),
+            // nocov end
+        }
+    }
+
+    fn collection_more(&self, collection: &str) -> Result<bool, DataSourceError> {
+        let collection_id: i64 = collection.parse().unwrap();
+        let response = self.send_request(
+            "collection_more",
+            &cbor_map! { "collection_id" => collection_id },
+        )?;
+        match response {
+            Value::Bool(b) => Ok(b),
+            _ => panic!("Expected bool from collection_more, got {:?}", response), // nocov
+        }
+    }
+
+    // nocov start
+    fn collection_reject(
+        &self,
+        collection: &str,
+        why: Option<&str>,
+    ) -> Result<(), DataSourceError> {
+        let collection_id: i64 = collection.parse().unwrap();
+        let mut payload = cbor_map! {
+            "collection_id" => collection_id
+        };
+        if let Some(reason) = why {
+            map_insert(&mut payload, "why", reason.to_string());
+        }
+        self.send_request("collection_reject", &payload)?;
+        Ok(())
+        // nocov end
+    }
+
+    fn new_pool(&self) -> Result<i128, DataSourceError> {
+        let response = self.send_request("new_pool", &cbor_map! {})?;
+        match response {
+            Value::Integer(i) => Ok(i.into()),
+            other => panic!("Expected integer response for pool id, got {:?}", other), // nocov
+        }
+    }
+
+    fn pool_add(&self, pool_id: i128) -> Result<i128, DataSourceError> {
+        let response = self.send_request("pool_add", &cbor_map! {"pool_id" => pool_id})?;
+        match response {
+            Value::Integer(i) => Ok(i.into()),
+            other => panic!("Expected integer response for variable id, got {:?}", other), // nocov
+        }
+    }
+
+    fn pool_generate(&self, pool_id: i128, consume: bool) -> Result<i128, DataSourceError> {
+        let response = self.send_request(
+            "pool_generate",
+            &cbor_map! {
+                "pool_id" => pool_id,
+                "consume" => consume,
+            },
+        )?;
+        match response {
+            Value::Integer(i) => Ok(i.into()),
+            other => panic!("Expected integer response for variable id, got {:?}", other), // nocov
+        }
+    }
+
+    fn mark_complete(&self, status: &str, origin: Option<&str>) {
+        let origin_value = match origin {
+            Some(s) => Value::Text(s.to_string()),
+            None => Value::Null,
+        };
+        let mark_complete = cbor_map! {
+            "command" => "mark_complete",
+            "status" => status,
+            "origin" => origin_value
+        };
+        let mut stream = self.stream.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = stream.request_cbor(&mark_complete);
+        let _ = stream.close();
+    }
+
+    fn test_aborted(&self) -> bool {
+        self.aborted.load(Ordering::SeqCst)
+    }
+}
+
+// ─── HegelSession ───────────────────────────────────────────────────────────
+
+/// Parse a "major.minor" version string into a comparable tuple.
+fn parse_version(s: &str) -> (u32, u32) {
+    let parts: Vec<&str> = s.split('.').collect();
+    if parts.len() != 2 {
+        panic!("invalid version string '{s}': expected 'major.minor' format");
+    }
+    let major = parts[0]
+        .parse()
+        .unwrap_or_else(|_| panic!("invalid major version in '{s}'"));
+    let minor = parts[1]
+        .parse()
+        .unwrap_or_else(|_| panic!("invalid minor version in '{s}'"));
+    (major, minor)
+}
+
 /// A persistent connection to the hegel server subprocess.
 ///
-/// Created once per process on first use. The subprocess and connection
-/// are reused across all `Hegel::run()` calls. The Python server supports
+/// A new session is created on first use and whenever the previous server
+/// process has exited (crash or explicit kill). The Python server supports
 /// multiple sequential `run_test` commands over a single connection.
 struct HegelSession {
     connection: Arc<Connection>,
@@ -36,14 +285,26 @@ struct HegelSession {
     /// brief run_test send/receive; test execution runs concurrently on
     /// per-test streams.
     control: Mutex<Stream>,
+    /// The server subprocess. Shared with the monitor thread so that
+    /// `__test_kill_server` can call `child.kill()` directly rather than
+    /// shelling out to the OS `kill` command.
+    child: Arc<Mutex<std::process::Child>>,
 }
 
 impl HegelSession {
-    fn get() -> &'static HegelSession {
-        SESSION.get_or_init(|| {
-            init_panic_hook();
-            HegelSession::init()
-        })
+    /// Return the current live session, or create a new one if the server has
+    /// exited (either crashed or been killed since the last call).
+    fn get() -> Arc<HegelSession> {
+        let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(ref s) = *guard {
+            if !s.connection.server_has_exited() {
+                return Arc::clone(s);
+            }
+        }
+        init_panic_hook();
+        let session = Arc::new(HegelSession::init());
+        *guard = Some(Arc::clone(&session));
+        session
     }
 
     fn init() -> HegelSession {
@@ -88,37 +349,249 @@ impl HegelSession {
                 panic!("Bad handshake response: {decoded:?}"); // nocov
             }
         };
-        let version: f64 = server_version.parse().unwrap_or_else(|_| {
-            let _ = child.kill(); // nocov
-            panic!("Bad version number: {server_version}"); // nocov
-        });
-
         let (lo, hi) = SUPPORTED_PROTOCOL_VERSIONS;
-        // nocov start
-        if !(lo <= version && version <= hi) {
+        let version = parse_version(server_version);
+        if version < parse_version(lo) || version > parse_version(hi) {
+            // nocov start
             let _ = child.kill();
             panic!(
                 "hegel-rust supports protocol versions {lo} through {hi}, but \
-                 the connected server is using protocol version {version}. Upgrading \
+                 the connected server is using protocol version {server_version}. Upgrading \
                  hegel-rust or downgrading hegel-core might help."
             );
             // nocov end
         }
 
-        // Monitor thread: detects server crash. The pipe close from
-        // the child exiting will unblock any pending reads.
+        let child_arc = Arc::new(Mutex::new(child));
+        let child_for_monitor = Arc::clone(&child_arc);
+
+        // Monitor thread: reaps the subprocess when it exits and notifies the
+        // connection. Polls try_wait() so the lock is not held while waiting,
+        // leaving it available for __test_kill_server to call kill().
         let conn_for_monitor = Arc::clone(&connection);
         std::thread::spawn(move || {
-            let _ = child.wait();
-            conn_for_monitor.mark_server_exited();
+            loop {
+                {
+                    let mut guard = child_for_monitor.lock().unwrap();
+                    if matches!(guard.try_wait(), Ok(Some(_))) {
+                        drop(guard);
+                        conn_for_monitor.mark_server_exited();
+                        return;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
         });
 
         HegelSession {
             connection,
             control: Mutex::new(control),
+            child: child_arc,
         }
     }
 }
+
+// ─── ServerTestRunner ───────────────────────────────────────────────────────
+
+/// Test runner that communicates with the hegel-core server.
+pub(crate) struct ServerTestRunner;
+
+impl TestRunner for ServerTestRunner {
+    fn run(
+        &self,
+        settings: &Settings,
+        database_key: Option<&str>,
+        run_case: &mut dyn FnMut(Box<dyn DataSource>, bool) -> TestCaseResult,
+    ) -> TestRunResult {
+        let session = HegelSession::get();
+        let connection = &session.connection;
+        let verbosity = settings.verbosity;
+
+        let mut test_stream = connection.new_stream();
+
+        let suppress_names: Vec<Value> = settings
+            .suppress_health_check
+            .iter()
+            .map(|c| Value::Text(c.as_str().to_string()))
+            .collect();
+
+        let database_key_bytes =
+            database_key.map_or(Value::Null, |k| Value::Bytes(k.as_bytes().to_vec()));
+
+        let mut run_test_msg = cbor_map! {
+            "command" => "run_test",
+            "test_cases" => settings.test_cases,
+            "seed" => settings.seed.map_or(Value::Null, Value::from),
+            "stream_id" => test_stream.stream_id,
+            "database_key" => database_key_bytes,
+            "derandomize" => settings.derandomize
+        };
+        let db_value = match &settings.database {
+            Database::Unset => Option::None, // nocov
+            Database::Disabled => Some(Value::Null),
+            Database::Path(s) => Some(Value::Text(s.clone())),
+        };
+        if let Some(db) = db_value {
+            if let Value::Map(ref mut map) = run_test_msg {
+                map.push((Value::Text("database".to_string()), db));
+            }
+        }
+        if !suppress_names.is_empty() {
+            if let Value::Map(ref mut map) = run_test_msg {
+                map.push((
+                    Value::Text("suppress_health_check".to_string()),
+                    Value::Array(suppress_names),
+                ));
+            }
+        }
+
+        // The control stream is behind a Mutex because Stream requires &mut self.
+        // This only serializes the brief run_test send/receive — actual test
+        // execution happens on per-test streams without holding this lock.
+        // The lock is released before any error handling so the mutex is never
+        // poisoned by a server crash on one thread affecting other threads.
+        let run_test_response = {
+            let mut control = session.control.lock().unwrap_or_else(|e| e.into_inner());
+            let send_id = control.send_request(cbor_encode(&run_test_msg));
+            send_id.and_then(|id| control.receive_reply(id))
+        }
+        .unwrap_or_else(|e| handle_channel_error(e));
+        let _run_test_result: Value = cbor_decode(&run_test_response);
+
+        if verbosity == Verbosity::Debug {
+            eprintln!("run_test response received");
+        }
+
+        let result_data: Value;
+        let ack_null = cbor_map! {"result" => Value::Null};
+        loop {
+            // Handle the server dying between events: receive_request will
+            // fail with RecvError once the background reader clears the senders.
+            let (event_id, event_payload) = match test_stream.receive_request() {
+                Ok(event) => event,
+                // nocov start
+                Err(_) if connection.server_has_exited() => {
+                    panic!("{}", server_crash_message());
+                    // nocov end
+                }
+                Err(e) => unreachable!("Failed to receive event (server still running): {}", e),
+            };
+
+            let event: Value = cbor_decode(&event_payload);
+            let event_type = map_get(&event, "event")
+                .and_then(as_text)
+                .expect("Expected event in payload");
+
+            if verbosity == Verbosity::Debug {
+                eprintln!("Received event: {:?}", event);
+            }
+
+            match event_type {
+                "test_case" => {
+                    let stream_id = map_get(&event, "stream_id")
+                        .and_then(as_u64)
+                        .expect("Missing stream id") as u32;
+
+                    let test_case_stream = connection.connect_stream(stream_id);
+
+                    // Ack the test_case event BEFORE running the test (prevents deadlock)
+                    test_stream
+                        .write_reply(event_id, cbor_encode(&ack_null))
+                        .expect("Failed to ack test_case");
+
+                    let backend = Box::new(ServerDataSource::new(
+                        Arc::clone(connection),
+                        test_case_stream,
+                        verbosity,
+                    ));
+                    run_case(backend, false);
+                }
+                "test_done" => {
+                    let ack_true = cbor_map! {"result" => true};
+                    test_stream
+                        .write_reply(event_id, cbor_encode(&ack_true))
+                        .expect("Failed to ack test_done");
+                    result_data = map_get(&event, "results").cloned().unwrap_or(Value::Null);
+                    break;
+                }
+                _ => {
+                    panic!("unknown event: {}", event_type); // nocov
+                }
+            }
+        }
+
+        // Check for server-side errors before processing results
+        if let Some(error_msg) = map_get(&result_data, "error").and_then(as_text) {
+            panic!("Server error: {}", error_msg); // nocov
+        }
+
+        // Check for health check failure before processing results
+        if let Some(failure_msg) = map_get(&result_data, "health_check_failure").and_then(as_text) {
+            panic!("Health check failure:\n{}", failure_msg); // nocov
+        }
+
+        // Check for flaky test detection
+        if let Some(flaky_msg) = map_get(&result_data, "flaky").and_then(as_text) {
+            panic!("Flaky test detected: {}", flaky_msg);
+        }
+
+        let n_interesting = map_get(&result_data, "interesting_test_cases")
+            .and_then(as_u64)
+            .unwrap_or(0);
+
+        if verbosity == Verbosity::Debug {
+            eprintln!("Test done. interesting_test_cases={}", n_interesting);
+        }
+
+        // Process final replay test cases (one per interesting example)
+        let mut failure_message: Option<String> = None;
+        for _ in 0..n_interesting {
+            let (event_id, event_payload) = test_stream
+                .receive_request()
+                .expect("Failed to receive final test_case");
+
+            let event: Value = cbor_decode(&event_payload);
+            let event_type = map_get(&event, "event").and_then(as_text);
+            assert_eq!(event_type, Some("test_case"));
+
+            let stream_id = map_get(&event, "stream_id")
+                .and_then(as_u64)
+                .expect("Missing stream id") as u32;
+
+            let test_case_stream = connection.connect_stream(stream_id);
+
+            test_stream
+                .write_reply(event_id, cbor_encode(&ack_null))
+                .expect("Failed to ack final test_case");
+
+            let backend = Box::new(ServerDataSource::new(
+                Arc::clone(connection),
+                test_case_stream,
+                verbosity,
+            ));
+            let tc_result = run_case(backend, true);
+
+            if let TestCaseResult::Interesting { panic_message } = tc_result {
+                failure_message = Some(panic_message);
+            }
+
+            if connection.server_has_exited() {
+                panic!("{}", server_crash_message()); // nocov
+            }
+        }
+
+        let passed = map_get(&result_data, "passed")
+            .and_then(as_bool)
+            .unwrap_or(true);
+
+        TestRunResult {
+            passed,
+            failure_message,
+        }
+    }
+}
+
+// ─── Panic hook and backtrace ───────────────────────────────────────────────
 
 thread_local! {
     /// (thread_name, thread_id, location, backtrace)
@@ -280,7 +753,7 @@ fn server_log_file() -> File {
     let pid = std::process::id();
     let ix = LOG_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
     let path = format!("{HEGEL_SERVER_DIR}/server.{pid}-{ix}.log");
-    SERVER_LOG_PATH.set(path.clone()).ok();
+    *SERVER_LOG_PATH.lock().unwrap() = Some(path.clone());
     OpenOptions::new()
         .create(true)
         .append(true)
@@ -363,8 +836,8 @@ fn startup_error_message(
     }
 
     // Include server log contents
-    if let Some(log_path) = SERVER_LOG_PATH.get() {
-        if let Ok(contents) = std::fs::read_to_string(log_path) {
+    if let Some(log_path) = SERVER_LOG_PATH.lock().unwrap().clone() {
+        if let Ok(contents) = std::fs::read_to_string(&log_path) {
             if !contents.trim().is_empty() {
                 let lines: Vec<&str> = contents.lines().collect();
                 let display_lines: Vec<&str> = lines.iter().take(3).copied().collect();
@@ -388,8 +861,8 @@ fn resolve_hegel_path(path: &str) -> String {
         return path.to_string();
     }
 
-    // Bare name (no '/') — try PATH lookup
-    if !path.contains('/') {
+    // Bare name (no path separator) — try PATH lookup
+    if !path.chars().any(std::path::is_separator) {
         if let Some(resolved) = crate::utils::path::which(path) {
             crate::utils::path::validate_executable(&resolved);
             return resolved;
@@ -407,6 +880,137 @@ fn resolve_hegel_path(path: &str) -> String {
         path, HEGEL_SERVER_COMMAND_ENV
     );
 }
+
+/// Format a server log excerpt for inclusion in error messages.
+///
+/// Returns the last 5 unindented lines and the content between them. Runs of
+/// more than 10 consecutive indented lines are truncated with a summary.
+pub fn format_log_excerpt(content: &str) -> String {
+    const MAX_UNINDENTED: usize = 5;
+    const INDENT_THRESHOLD: usize = 10;
+    const INDENT_CONTEXT: usize = 3;
+
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        return "(empty)".to_string();
+    }
+
+    // Find start: walk backwards until we've seen MAX_UNINDENTED unindented lines
+    let mut unindented_seen = 0;
+    let mut start_idx = 0;
+    for (i, line) in lines.iter().enumerate().rev() {
+        if is_log_unindented(line) {
+            unindented_seen += 1;
+            if unindented_seen >= MAX_UNINDENTED {
+                start_idx = i;
+                break;
+            }
+        }
+    }
+
+    // Process the relevant section, truncating long indented runs
+    let relevant = &lines[start_idx..];
+    let mut output: Vec<String> = Vec::new();
+    let mut indent_run: Vec<&str> = Vec::new();
+
+    for &line in relevant {
+        if is_log_unindented(line) {
+            flush_log_indent_run(
+                &mut indent_run,
+                &mut output,
+                INDENT_THRESHOLD,
+                INDENT_CONTEXT,
+            );
+            output.push(line.to_string());
+        } else {
+            indent_run.push(line);
+        }
+    }
+    flush_log_indent_run(
+        &mut indent_run,
+        &mut output,
+        INDENT_THRESHOLD,
+        INDENT_CONTEXT,
+    );
+
+    output.join("\n")
+}
+
+fn is_log_unindented(line: &str) -> bool {
+    !line.is_empty() && !line.starts_with(' ') && !line.starts_with('\t')
+}
+
+fn flush_log_indent_run(
+    run: &mut Vec<&str>,
+    output: &mut Vec<String>,
+    threshold: usize,
+    context: usize,
+) {
+    if run.is_empty() {
+        return;
+    }
+    if run.len() > threshold {
+        let keep = context.min(run.len() / 2);
+        for &line in &run[..keep] {
+            output.push(line.to_string());
+        }
+        let hidden = run.len() - 2 * keep;
+        output.push(format!("  [...{hidden} lines...]"));
+        for &line in &run[run.len() - keep..] {
+            output.push(line.to_string());
+        }
+    } else {
+        for &line in run.iter() {
+            output.push(line.to_string());
+        }
+    }
+    run.clear();
+}
+
+fn server_log_excerpt() -> Option<String> {
+    let log_path = SERVER_LOG_PATH.lock().unwrap().clone()?;
+    let content = std::fs::read_to_string(log_path).ok()?;
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(format_log_excerpt(trimmed))
+}
+
+fn server_crash_message() -> String {
+    const BASE: &str = "The hegel server process exited unexpectedly.";
+    let log_path_owned = SERVER_LOG_PATH.lock().unwrap().clone();
+    let log_path = log_path_owned.as_deref().unwrap_or(".hegel/server.log");
+    match server_log_excerpt() {
+        Some(excerpt) => format!("{BASE}\n\nLast server log entries:\n{excerpt}"),
+        None => format!("{BASE}\n\n(No entries found in {log_path})"),
+    }
+}
+
+fn handle_channel_error(e: std::io::Error) -> ! {
+    if e.kind() == std::io::ErrorKind::ConnectionAborted {
+        panic!("{}", server_crash_message());
+    }
+    unreachable!("unexpected channel error: {e}")
+}
+
+/// Kill the hegel server process and wait until the connection detects that it
+/// has exited.  Only for use in tests — not part of the public API.
+#[doc(hidden)]
+pub fn __test_kill_server() {
+    let guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(session) = guard.as_ref() {
+        let child_arc = Arc::clone(&session.child);
+        let conn = Arc::clone(&session.connection);
+        drop(guard);
+        let _ = child_arc.lock().unwrap().kill();
+        while !conn.server_has_exited() {
+            std::thread::yield_now();
+        }
+    }
+}
+
+// ─── Public types ───────────────────────────────────────────────────────────
 
 /// Health checks that can be suppressed during test execution.
 ///
@@ -469,45 +1073,6 @@ pub enum Verbosity {
     Debug,
 }
 
-impl Verbosity {}
-
-// internal use only
-#[doc(hidden)]
-pub fn hegel<F>(test_fn: F)
-where
-    F: FnMut(TestCase),
-{
-    Hegel::new(test_fn).run();
-}
-
-fn is_in_ci() -> bool {
-    const CI_VARS: &[(&str, Option<&str>)] = &[
-        ("CI", None),
-        ("TF_BUILD", Some("true")),
-        ("BUILDKITE", Some("true")),
-        ("CIRCLECI", Some("true")),
-        ("CIRRUS_CI", Some("true")),
-        ("CODEBUILD_BUILD_ID", None),
-        ("GITHUB_ACTIONS", Some("true")),
-        ("GITLAB_CI", None),
-        ("HEROKU_TEST_RUN_ID", None),
-        ("TEAMCITY_VERSION", None),
-        ("bamboo.buildKey", None),
-    ];
-
-    CI_VARS.iter().any(|(key, value)| match value {
-        None => std::env::var_os(key).is_some(),
-        Some(expected) => std::env::var(key).ok().as_deref() == Some(expected), // nocov
-    })
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Database {
-    Unset,
-    Disabled,
-    Path(String),
-}
-
 /// Configuration for a Hegel test run.
 ///
 /// Use builder methods to customize, then pass to [`Hegel::settings`] or
@@ -517,12 +1082,12 @@ enum Database {
 /// and tests are derandomized by default.
 #[derive(Debug, Clone)]
 pub struct Settings {
-    test_cases: u64,
-    verbosity: Verbosity,
-    seed: Option<u64>,
-    derandomize: bool,
-    database: Database,
-    suppress_health_check: Vec<HealthCheck>,
+    pub(crate) test_cases: u64,
+    pub(crate) verbosity: Verbosity,
+    pub(crate) seed: Option<u64>,
+    pub(crate) derandomize: bool,
+    pub(crate) database: Database,
+    pub(crate) suppress_health_check: Vec<HealthCheck>,
 }
 
 impl Settings {
@@ -600,11 +1165,48 @@ impl Settings {
 }
 
 impl Default for Settings {
-    // nocov start
     fn default() -> Self {
         Self::new()
-        // nocov end
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Database {
+    Unset,
+    Disabled,
+    Path(String),
+}
+
+// ─── Hegel test builder ─────────────────────────────────────────────────────
+
+// internal use only
+#[doc(hidden)]
+pub fn hegel<F>(test_fn: F)
+where
+    F: FnMut(TestCase),
+{
+    Hegel::new(test_fn).run();
+}
+
+fn is_in_ci() -> bool {
+    const CI_VARS: &[(&str, Option<&str>)] = &[
+        ("CI", None),
+        ("TF_BUILD", Some("true")),
+        ("BUILDKITE", Some("true")),
+        ("CIRCLECI", Some("true")),
+        ("CIRRUS_CI", Some("true")),
+        ("CODEBUILD_BUILD_ID", None),
+        ("GITHUB_ACTIONS", Some("true")),
+        ("GITLAB_CI", None),
+        ("HEROKU_TEST_RUN_ID", None),
+        ("TEAMCITY_VERSION", None),
+        ("bamboo.buildKey", None),
+    ];
+
+    CI_VARS.iter().any(|(key, value)| match value {
+        None => std::env::var_os(key).is_some(),
+        Some(expected) => std::env::var(key).ok().as_deref() == Some(expected),
+    })
 }
 
 // internal use only
@@ -650,207 +1252,31 @@ where
 
     /// Run the property-based tests.
     ///
-    /// Connects to the shared hegel server (spawning it on first use),
-    /// sends a `run_test` command, processes test cases, and reports results.
     /// Panics if any test case fails.
     pub fn run(self) {
-        let session = HegelSession::get();
-        let connection = &session.connection;
+        init_panic_hook();
 
+        let runner = ServerTestRunner;
         let mut test_fn = self.test_fn;
-        let verbosity = self.settings.verbosity;
-        let got_interesting = Arc::new(AtomicBool::new(false));
-        let mut test_stream = connection.new_stream();
+        let got_interesting = AtomicBool::new(false);
 
-        let suppress_names: Vec<Value> = self
-            .settings
-            .suppress_health_check
-            .iter()
-            .map(|c| Value::Text(c.as_str().to_string()))
-            .collect();
-
-        let database_key_bytes = self
-            .database_key
-            .map_or(Value::Null, |k| Value::Bytes(k.into_bytes()));
-
-        let mut run_test_msg = cbor_map! {
-            "command" => "run_test",
-            "test_cases" => self.settings.test_cases,
-            "seed" => self.settings.seed.map_or(Value::Null, Value::from),
-            "stream_id" => test_stream.stream_id,
-            "database_key" => database_key_bytes,
-            "derandomize" => self.settings.derandomize
-        };
-        let db_value = match &self.settings.database {
-            Database::Unset => Option::None, // nocov
-            Database::Disabled => Some(Value::Null),
-            Database::Path(s) => Some(Value::Text(s.clone())),
-        };
-        if let Some(db) = db_value {
-            if let Value::Map(ref mut map) = run_test_msg {
-                map.push((Value::Text("database".to_string()), db));
-            }
-        }
-        if !suppress_names.is_empty() {
-            if let Value::Map(ref mut map) = run_test_msg {
-                map.push((
-                    Value::Text("suppress_health_check".to_string()),
-                    Value::Array(suppress_names),
-                ));
-            }
-        }
-
-        // The control stream is behind a Mutex because Stream requires &mut self.
-        // This only serializes the brief run_test send/receive — actual test
-        // execution happens on per-test streams without holding this lock.
-        {
-            let mut control = session.control.lock().unwrap();
-            let run_test_id = control
-                .send_request(cbor_encode(&run_test_msg))
-                .expect("Failed to send run_test");
-
-            let run_test_response = control
-                .receive_reply(run_test_id)
-                .expect("Failed to receive run_test response");
-            let _run_test_result: Value = cbor_decode(&run_test_response);
-        }
-
-        if verbosity == Verbosity::Debug {
-            eprintln!("run_test response received"); // nocov
-        }
-
-        let result_data: Value;
-        let ack_null = cbor_map! {"result" => Value::Null};
-        loop {
-            // Handle the server dying between events: receive_request will
-            // fail with RecvError once the background reader clears the senders.
-            let (event_id, event_payload) = match test_stream.receive_request() {
-                Ok(event) => event,
-                // nocov start
-                Err(_) if connection.server_has_exited() => {
-                    panic!("{}", SERVER_CRASHED_MESSAGE);
-                    // nocov end
+        let result = runner.run(
+            &self.settings,
+            self.database_key.as_deref(),
+            &mut |backend, is_final| {
+                let tc_result = run_test_case(backend, &mut test_fn, is_final);
+                if matches!(&tc_result, TestCaseResult::Interesting { .. }) {
+                    got_interesting.store(true, Ordering::SeqCst);
                 }
-                Err(e) => unreachable!("Failed to receive event (server still running): {}", e),
-            };
+                tc_result
+            },
+        );
 
-            let event: Value = cbor_decode(&event_payload);
-            let event_type = map_get(&event, "event")
-                .and_then(as_text)
-                .expect("Expected event in payload");
-
-            if verbosity == Verbosity::Debug {
-                eprintln!("Received event: {:?}", event); // nocov
-            }
-
-            match event_type {
-                "test_case" => {
-                    let stream_id = map_get(&event, "stream_id")
-                        .and_then(as_u64)
-                        .expect("Missing stream id") as u32;
-
-                    let test_case_stream = connection.connect_stream(stream_id);
-
-                    // Ack the test_case event BEFORE running the test (prevents deadlock)
-                    test_stream
-                        .write_reply(event_id, cbor_encode(&ack_null))
-                        .expect("Failed to ack test_case");
-
-                    run_test_case(
-                        connection,
-                        test_case_stream,
-                        &mut test_fn,
-                        false,
-                        verbosity,
-                        &got_interesting,
-                    );
-                }
-                "test_done" => {
-                    let ack_true = cbor_map! {"result" => true};
-                    test_stream
-                        .write_reply(event_id, cbor_encode(&ack_true))
-                        .expect("Failed to ack test_done");
-                    result_data = map_get(&event, "results").cloned().unwrap_or(Value::Null);
-                    break;
-                }
-                _ => {
-                    panic!("unknown event: {}", event_type); // nocov
-                }
-            }
-        }
-
-        // Check for server-side errors before processing results
-        if let Some(error_msg) = map_get(&result_data, "error").and_then(as_text) {
-            panic!("Server error: {}", error_msg); // nocov
-        }
-
-        // Check for health check failure before processing results
-        if let Some(failure_msg) = map_get(&result_data, "health_check_failure").and_then(as_text) {
-            panic!("Health check failure:\n{}", failure_msg); // nocov
-        }
-
-        // Check for flaky test detection
-        if let Some(flaky_msg) = map_get(&result_data, "flaky").and_then(as_text) {
-            panic!("Flaky test detected: {}", flaky_msg); // nocov
-        }
-
-        let n_interesting = map_get(&result_data, "interesting_test_cases")
-            .and_then(as_u64)
-            .unwrap_or(0);
-
-        if verbosity == Verbosity::Debug {
-            eprintln!("Test done. interesting_test_cases={}", n_interesting); // nocov
-        }
-
-        // Process final replay test cases (one per interesting example)
-        let mut final_result: Option<TestCaseResult> = None;
-        for _ in 0..n_interesting {
-            let (event_id, event_payload) = test_stream
-                .receive_request()
-                .expect("Failed to receive final test_case");
-
-            let event: Value = cbor_decode(&event_payload);
-            let event_type = map_get(&event, "event").and_then(as_text);
-            assert_eq!(event_type, Some("test_case"));
-
-            let stream_id = map_get(&event, "stream_id")
-                .and_then(as_u64)
-                .expect("Missing stream id") as u32;
-
-            let test_case_stream = connection.connect_stream(stream_id);
-
-            test_stream
-                .write_reply(event_id, cbor_encode(&ack_null))
-                .expect("Failed to ack final test_case");
-
-            let tc_result = run_test_case(
-                connection,
-                test_case_stream,
-                &mut test_fn,
-                true,
-                verbosity,
-                &got_interesting,
-            );
-
-            if matches!(&tc_result, TestCaseResult::Interesting { .. }) {
-                final_result = Some(tc_result);
-            }
-
-            if connection.server_has_exited() {
-                panic!("{}", SERVER_CRASHED_MESSAGE); // nocov
-            }
-        }
-
-        let passed = map_get(&result_data, "passed")
-            .and_then(as_bool)
-            .unwrap_or(true);
-
-        let test_failed = !passed || got_interesting.load(Ordering::SeqCst);
+        let test_failed = !result.passed || got_interesting.load(Ordering::SeqCst);
 
         if is_running_in_antithesis() {
             #[cfg(not(feature = "antithesis"))]
             panic!(
-                // nocov
                 "When Hegel is run inside of Antithesis, it requires the `antithesis` feature. \
                 You can add it with {{ features = [\"antithesis\"] }}."
             );
@@ -864,32 +1290,20 @@ where
         }
 
         if test_failed {
-            let msg = match &final_result {
-                Some(TestCaseResult::Interesting { panic_message }) => panic_message.as_str(),
-                _ => "unknown", // nocov
-            };
+            let msg = result.failure_message.as_deref().unwrap_or("unknown");
             panic!("Property test failed: {}", msg);
         }
     }
 }
 
-enum TestCaseResult {
-    Valid,
-    Invalid,
-    Interesting { panic_message: String },
-}
+// ─── Generic test case execution ────────────────────────────────────────────
 
-fn run_test_case<F: FnMut(TestCase)>(
-    connection: &Arc<Connection>,
-    test_stream: Stream,
-    test_fn: &mut F,
+fn run_test_case(
+    data_source: Box<dyn DataSource>,
+    test_fn: &mut dyn FnMut(TestCase),
     is_final: bool,
-    verbosity: Verbosity,
-    got_interesting: &Arc<AtomicBool>,
 ) -> TestCaseResult {
-    // Create TestCase. The test function gets a clone (cheap Rc bump),
-    // so we retain access to the same underlying TestCaseData after the test runs.
-    let tc = TestCase::new(Arc::clone(connection), test_stream, verbosity, is_final);
+    let tc = TestCase::new(data_source, is_final);
 
     let result = with_test_context(|| catch_unwind(AssertUnwindSafe(|| test_fn(tc.clone()))));
 
@@ -897,23 +1311,28 @@ fn run_test_case<F: FnMut(TestCase)>(
         Ok(()) => (TestCaseResult::Valid, None),
         Err(e) => {
             let msg = panic_message(e);
-            if msg == ASSUME_FAIL_STRING || msg == STOP_TEST_STRING {
+            if msg == ASSUME_FAIL_STRING {
                 (TestCaseResult::Invalid, None)
+            } else if msg == STOP_TEST_STRING {
+                (TestCaseResult::Overrun, None)
+            } else if msg == LOOP_DONE_STRING {
+                // `TestCase::repeat` returns `!`, so it exits via this
+                // sentinel panic when its loop completes normally. Treat it
+                // the same as a no-panic return.
+                (TestCaseResult::Valid, None)
             } else {
-                got_interesting.store(true, Ordering::SeqCst);
-
                 // Take panic info - we need location for origin, and print details on final
                 let (thread_name, thread_id, location, backtrace) = take_panic_info()
-                    // nocov start
                     .unwrap_or_else(|| {
+                        // nocov start
                         (
                             "<unknown>".to_string(),
                             "?".to_string(),
                             "<unknown>".to_string(),
                             Backtrace::disabled(),
                         )
+                        // nocov end
                     });
-                // nocov end
 
                 if is_final {
                     eprintln!(
@@ -947,24 +1366,15 @@ fn run_test_case<F: FnMut(TestCase)>(
         }
     };
 
-    // Send mark_complete using the same stream that generators used.
-    // Skip if test was aborted (StopTest) - server already closed the stream.
+    // Send mark_complete via the data source.
+    // Skip if test was aborted (StopTest) - the data source already closed.
     if !tc.test_aborted() {
         let status = match &tc_result {
             TestCaseResult::Valid => "VALID",
-            TestCaseResult::Invalid => "INVALID",
+            TestCaseResult::Invalid | TestCaseResult::Overrun => "INVALID",
             TestCaseResult::Interesting { .. } => "INTERESTING",
         };
-        let origin_value = match &origin {
-            Some(s) => Value::Text(s.clone()),
-            None => Value::Null,
-        };
-        let mark_complete = cbor_map! {
-            "command" => "mark_complete",
-            "status" => status,
-            "origin" => origin_value
-        };
-        tc.send_mark_complete(&mark_complete);
+        tc.mark_complete(status, origin.as_deref());
     }
 
     tc_result

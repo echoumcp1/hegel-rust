@@ -1,5 +1,165 @@
 # Changelog
 
+## 0.7.4 - 2026-04-20
+
+This patch adds windows support for hegel-rust. It is somewhat experimental, but the full
+feature set should work.
+
+## 0.7.3 - 2026-04-20
+
+This adds two new macros to allow more flexible use of hegel.
+
+* `#[hegel::main]` wraps a function as a standalone binary entry point, exposing CLI flags for every Settings option.
+* `#[hegel::standalone_function]` rewrites fn(tc: TestCase, args...) into fn(args...) so a property test can be invoked directly.
+
+## 0.7.2 - 2026-04-20
+
+This patch loosens restrictions on using threads in hegel-rust. `TestCase` now implements `Send`
+(and already implemented Clone) so data generation can now occur from multiple threads.
+
+> [!IMPORTANT]
+>
+> This feature should be used only with extreme caution at present. Please consult the `TestCase`
+> documentation for details, but it can only be correctly used with extreme care. We intend
+> for threading support to get significantly better over time without the API changing,
+> and this is an initial release of the intended API with the worst possible implementation
+> of it. We are releasing it because even with these caveats it is useful in some cases,
+> but it is highly likely not to be ready for you to use yet.
+
+## 0.7.1 - 2026-04-20
+
+This patch adds support for a `repeat` method on test case, for operations that
+you want to run repeatedly until they hit an error. Effectively equivalent to
+a `loop` that is better optimised for testing.
+
+## 0.7.0 - 2026-04-20
+
+This release adds a `reject` method to `TestCase` and `ExplicitTestCase`. It behaves like `assume(false)`, rejecting the current test input, but returns `!` so the compiler knows that code following the call is unreachable.
+
+```rust
+#[hegel::test]
+fn my_test(tc: hegel::TestCase) {
+    let n: i32 = tc.draw(gs::integers());
+    let positive: u32 = match u32::try_from(n) {
+        Ok(v) => v,
+        Err(_) => tc.reject(),
+    };
+    // use `positive` here without needing an extra `unreachable!()` branch
+}
+```
+
+## 0.6.2 - 2026-04-20
+
+Bump our pinned hegel-core to [0.4.4](https://github.com/hegeldev/hegel-core/releases/tag/v0.4.4), incorporating the following changes:
+
+> This patch adds a new `OneOfConformance` test, for the `one_of` generator.
+>
+> This patch also adds recommended integer bound constants (`INT32_MIN`, `INT32_MAX`, `INT64_MIN`, `INT64_MAX`, `BIGINT_MIN`, `BIGINT_MAX`) for use in conformance test setup. Languages with arbitrary-precision integers should use the `BIGINT` bounds to exercise CBOR bignum tag decoding, which is not triggered by the narrower ranges most implementations currently use.
+>
+> — [v0.4.3](https://github.com/hegeldev/hegel-core/releases/tag/v0.4.3)
+
+> This release is in support of getting hegel libraries working on Windows. It mostly fixes issues affecting the conformance testing.
+>
+> Windows support still won't work in individual libraries until they also do work to support it.
+>
+> — [v0.4.4](https://github.com/hegeldev/hegel-core/releases/tag/v0.4.4)
+
+## 0.6.1 - 2026-04-17
+
+Added more code examples in the documentation.
+
+## 0.6.0 - 2026-04-17
+
+This release loosens the argument types of `sampled_from()` and `one_of()` so callers don't have to pre-materialize a `Vec`.
+
+- `sampled_from()` now accepts anything convertible into `Cow<'_, [T]>`, so `Vec<T>`, `&[T]`, `&Vec<T>`, and `&[T; N]` all work directly. Borrowed slices incur zero allocation up front: the generator keeps a `Cow::Borrowed` and only clones individual elements on draw.
+- `one_of()` now accepts any `IntoIterator<Item = BoxedGenerator<'_, T>>` rather than requiring a `Vec`, so callers can pass iterator chains without an intermediate `.collect()`.
+
+Turbofished calls like `sampled_from::<i32>(vec![])` are technically a source-breaking change, since the function now has a second generic parameter, but the non-turbofished call sites (every existing use in practice) continue to work unchanged.
+
+## 0.5.3 - 2026-04-15
+
+This release improves resilience when the hegel server subprocess exits unexpectedly.
+
+- When a server crash is detected, the next call to `hegel()` now transparently starts a fresh server instead of failing with a `PoisonError` or a generic panic.
+- Server crash error messages now include the last few lines of `.hegel/server.log` so the root cause is visible without inspecting the log file manually.
+- Panics from test functions (including server crashes) are now properly propagated rather than being replaced with a generic "could not find any examples" error.
+
+## 0.5.2 - 2026-04-15
+
+This patch adds an `#[hegel::explicit_test_case]` attribute for providing explicit example-based test cases alongside property-based tests.
+
+## 0.5.1 - 2026-04-13
+
+This release consists entirely of internal refactoring within Hegel to
+provide better abstractions over the hegel-core server. It should have
+no user visible effect.
+
+## 0.5.0 - 2026-04-12
+
+Fix `vecs(...).unique(true)` not actually enforcing element uniqueness in some cases.
+
+Calling `.unique()` now requires the elements produced by the generator passed to `vecs()` to implement `PartialEq`. This is therefore technically a breaking change, though we expect that the only case where you will need to update your code is when it was previously not working anyway.
+
+## 0.4.6 - 2026-04-10
+
+Bump our pinned hegel-core to [0.4.0](https://github.com/hegeldev/hegel-core/releases/tag/v0.4.0), incorporating the following change:
+
+> This patch changes our CBOR tag for text fields from `6` to `91`, to avoid reserving a "Standards Action" tag, even though it is technically unassigned. See https://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml.
+>
+> The protocol version is now `0.10`.
+>
+> — [v0.4.0](https://github.com/hegeldev/hegel-core/releases/tag/v0.4.0)
+
+## 0.4.5 - 2026-04-07
+
+This release adds more configuration parameters to `generators::text()`:
+
+```rust
+gs::text().codec("ascii");
+gs::text().alphabet("abc");
+gs::text().min_codepoint(0x20).max_codepoint(0x7E);
+gs::text().categories(&["L", "Nd"]);
+gs::text().exclude_categories(&["Cc"]);
+gs::text().include_characters("@#$");
+gs::text().exclude_characters("\n\t");
+```
+
+As well as a new `characters()` generator:
+
+```rust
+let c: char = tc.draw(gs::characters());
+let c: char = tc.draw(gs::characters().codec("ascii"));
+```
+
+## 0.4.4 - 2026-04-07
+
+This patch improves our output for failing test cases. We now print drawn values using variable names from the test function, instead of numbered `Draw` labels:
+
+```rust
+#[hegel::test]
+fn my_test(tc: hegel::TestCase) {
+    let x: i32 = tc.draw(gs::integers());
+    let y: i32 = tc.draw(gs::integers());
+    for _ in 0..2 {
+        let z: i32 = tc.draw(gs::integers());
+    }
+    panic!("");
+}
+
+// Previously:
+// Draw 1: 0
+// Draw 2: 1
+// Draw 3: 0
+// Draw 4: 3
+
+// Now:
+// let x = 0;
+// let y = 1;
+// let z_1 = 0;
+// let z_2 = 3;
+```
+
 ## 0.4.3 - 2026-04-03
 
 This patch updates our pinned hegel-core to [0.3.0](https://github.com/hegeldev/hegel-core/releases/tag/v0.3.0), with no user-visible changes.

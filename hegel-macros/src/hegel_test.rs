@@ -1,67 +1,15 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::parse::{Parse, ParseStream};
-use syn::{Expr, FnArg, Ident, ItemFn, Token};
+use syn::{FnArg, ItemFn};
 
-/// A single named argument in a `#[hegel::test(...)]` expression.
-struct SettingArg {
-    key: Ident,
-    value: Expr,
-}
+use crate::common::{
+    SettingsAttrArgs, build_explicit_blocks, extract_explicit_test_cases, extract_ident_from_pat,
+    rewrite_draws_in_block,
+};
 
-/// Parsed result of `#[hegel::test(...)]`.
-///
-/// Acceptable formats:
-/// - `#[hegel::test]`
-/// - `#[hegel::test(settings_expr)]`
-/// - `#[hegel::test(settings_expr, seed = 42)]`
-/// - `#[hegel::test(seed = 42)]`
-struct TestArgs {
-    settings: Option<Expr>,
-    settings_args: Vec<SettingArg>,
-}
-
-impl Parse for TestArgs {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut settings = None;
-        let mut settings_args = Vec::new();
-
-        if input.is_empty() {
-            return Ok(TestArgs {
-                settings,
-                settings_args,
-            });
-        }
-
-        // check if the first arg is a settings expression or a named settingArg
-        let is_named_arg = input.peek(Ident) && input.peek2(Token![=]);
-        if !is_named_arg {
-            settings = Some(input.parse::<Expr>()?);
-            if !input.is_empty() {
-                let _comma: Token![,] = input.parse()?;
-            }
-        }
-
-        while !input.is_empty() {
-            let key: Ident = input.parse()?;
-            let _eq: Token![=] = input.parse()?;
-            let value: Expr = input.parse()?;
-            settings_args.push(SettingArg { key, value });
-            if !input.is_empty() {
-                let _comma: Token![,] = input.parse()?;
-            }
-        }
-
-        Ok(TestArgs {
-            settings,
-            settings_args,
-        })
-    }
-}
-
-pub fn expand_test(attr: proc_macro2::TokenStream, item: proc_macro2::TokenStream) -> TokenStream {
-    let test_args: TestArgs = if attr.is_empty() {
-        TestArgs {
+pub fn expand_test(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let test_args: SettingsAttrArgs = if attr.is_empty() {
+        SettingsAttrArgs {
             settings: None,
             settings_args: Vec::new(),
         }
@@ -72,7 +20,7 @@ pub fn expand_test(attr: proc_macro2::TokenStream, item: proc_macro2::TokenStrea
         }
     };
 
-    let func: ItemFn = match syn::parse2(item) {
+    let mut func: ItemFn = match syn::parse2(item) {
         Ok(f) => f,
         Err(e) => return e.to_compile_error(),
     };
@@ -96,8 +44,8 @@ pub fn expand_test(attr: proc_macro2::TokenStream, item: proc_macro2::TokenStrea
             .to_compile_error();
         }
     };
-    let param_pat = &param_typed.pat;
-    let param_ty = &param_typed.ty;
+    let param_pat = &*param_typed.pat;
+    let param_ty = &*param_typed.ty;
 
     for attr in &func.attrs {
         if attr.path().is_ident("test") {
@@ -110,33 +58,33 @@ pub fn expand_test(attr: proc_macro2::TokenStream, item: proc_macro2::TokenStrea
         }
     }
 
-    let body = &func.block;
-    let test_name = func.sig.ident.to_string();
-
-    let settings_args_chain: Vec<TokenStream> = test_args
-        .settings_args
-        .iter()
-        .map(|arg| {
-            let key = &arg.key;
-            let value = &arg.value;
-            quote! { .#key(#value) }
-        })
-        .collect();
-
-    let settings_expr = match &test_args.settings {
-        Some(expr) => quote! { #expr #(#settings_args_chain)* },
-        None if settings_args_chain.is_empty() => quote! { hegel::Settings::new() },
-        None => quote! { hegel::Settings::new() #(#settings_args_chain)* },
+    let explicit_cases = match extract_explicit_test_cases(&mut func.attrs) {
+        Ok(cases) => cases,
+        Err(err) => return err,
     };
+
+    let body = {
+        let mut body = (*func.block).clone();
+        if let Some(test_case_name) = extract_ident_from_pat(param_pat) {
+            rewrite_draws_in_block(&mut body, &test_case_name);
+        }
+        body
+    };
+
+    let test_name = func.sig.ident.to_string();
+    let settings_expr = test_args.to_settings_expr();
+    let explicit_blocks = build_explicit_blocks(&explicit_cases, param_pat, &body);
 
     let new_body: TokenStream = quote! {
         {
+            #(#explicit_blocks)*
+
             hegel::Hegel::new(|#param_pat: #param_ty| #body)
             .settings(#settings_expr)
             .__database_key(format!("{}::{}", module_path!(), #test_name))
             .test_location(hegel::TestLocation {
                 function: #test_name.to_string(),
-                file: file!().to_string(),
+                file: file!().replace('\\', "/"),
                 class: module_path!().to_string(),
                 begin_line: line!(),
             })

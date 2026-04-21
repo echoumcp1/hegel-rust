@@ -22,27 +22,39 @@ fn test_non_hegel_command_gives_informative_error() {
 #[test]
 fn test_wrong_version_hegel_gives_informative_error() {
     // Create a script that pretends to be an old hegel version
-    let script_dir = std::env::temp_dir().join("hegel_test_fake_binary");
-    std::fs::create_dir_all(&script_dir).unwrap();
-    let script_path = script_dir.join("fake_hegel");
-
-    std::fs::write(
-        &script_path,
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'hegel (version 0.1.0)'; exit 0; fi\nexit 1\n",
-    )
-    .unwrap();
+    let script_dir = tempfile::tempdir().unwrap();
 
     #[cfg(unix)]
-    {
+    let script_path = {
+        let p = script_dir.path().join("fake_hegel");
+        std::fs::write(
+            &p,
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'hegel (version 0.1.0)'; exit 0; fi\nexit 1\n",
+        )
+        .unwrap();
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    };
+
+    #[cfg(windows)]
+    let script_path = {
+        let p = script_dir.path().join("fake_hegel.bat");
+        // Avoid nesting echo inside if-block parentheses — the ) in the
+        // version string would close the if-block prematurely.
+        std::fs::write(
+            &p,
+            "@echo off\r\nif not \"%1\"==\"--version\" exit /b 1\r\necho hegel (version 0.1.0)\r\nexit /b 0\r\n",
+        )
+        .unwrap();
+        p
+    };
 
     TempRustProject::new()
         .main_file(HEGEL_CODE)
         .env("HEGEL_SERVER_COMMAND", script_path.to_str().unwrap())
         .expect_failure(
-            "(?s)failed during startup.*Version mismatch.*expected 'hegel \\(version 0\\.3\\.\\d+\\)'.*got 'hegel \\(version 0\\.1\\.0\\)'",
+            "(?s)failed during startup.*Version mismatch.*expected 'hegel \\(version 0\\.4\\.\\d+\\)'.*got 'hegel \\(version 0\\.1\\.0\\)'",
         )
         .cargo_run(&[]);
 }
@@ -68,9 +80,8 @@ fn test_bare_name_not_on_path_gives_informative_error() {
 #[test]
 #[cfg(unix)]
 fn test_not_executable_gives_informative_error() {
-    let dir = std::env::temp_dir().join("hegel_test_not_executable");
-    std::fs::create_dir_all(&dir).unwrap();
-    let script_path = dir.join("not_executable_hegel");
+    let dir = tempfile::tempdir().unwrap();
+    let script_path = dir.path().join("not_executable_hegel");
     std::fs::write(&script_path, "#!/bin/sh\nexit 0\n").unwrap();
 
     use std::os::unix::fs::PermissionsExt;
@@ -87,9 +98,8 @@ fn test_not_executable_gives_informative_error() {
 #[cfg(unix)]
 fn test_server_hangs_gives_bad_virtualenv_message() {
     // Script that closes stdout (so handshake fails) but stays alive
-    let dir = std::env::temp_dir().join("hegel_test_hanging");
-    std::fs::create_dir_all(&dir).unwrap();
-    let script_path = dir.join("hanging_hegel");
+    let dir = tempfile::tempdir().unwrap();
+    let script_path = dir.path().join("hanging_hegel");
     std::fs::write(&script_path, "#!/bin/sh\nexec 1>&-\nsleep 10\n").unwrap();
 
     use std::os::unix::fs::PermissionsExt;
@@ -105,9 +115,8 @@ fn test_server_hangs_gives_bad_virtualenv_message() {
 #[test]
 #[cfg(unix)]
 fn test_server_log_included_in_error() {
-    let dir = std::env::temp_dir().join("hegel_test_stderr");
-    std::fs::create_dir_all(&dir).unwrap();
-    let script_path = dir.join("stderr_hegel");
+    let dir = tempfile::tempdir().unwrap();
+    let script_path = dir.path().join("stderr_hegel");
     std::fs::write(
         &script_path,
         "#!/bin/sh\n\

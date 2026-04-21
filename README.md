@@ -8,7 +8,7 @@
 # Hegel for Rust
 
 * [Documentation](https://docs.rs/hegeltest)
-* [Hegel website](https://hegel.dev)
+* [Website](https://hegel.dev)
 
 `hegel-rust` is a property-based testing library for Rust. `hegel-rust` is based on [Hypothesis](https://github.com/hypothesisworks/hypothesis), using the [Hegel](https://hegel.dev/) protocol.
 
@@ -19,6 +19,8 @@ To install: `cargo add --dev hegeltest`.
 Hegel will use [uv](https://docs.astral.sh/uv/) to install the required [hegel-core](https://github.com/hegeldev/hegel-core) server component.
 If `uv` is already on your path, it will use that, otherwise it will download a private copy of it to ~/.cache/hegel and not put it on your path.
 See https://hegel.dev/reference/installation for details.
+
+If you are windows (which is only supported on a somewhat experimental basis right now), the automatic uv installation doesn't work yet, and you will need to [install uv yourself](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_1_2) and make sure it is on your path.
 
 ## Quickstart
 

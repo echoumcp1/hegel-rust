@@ -22,15 +22,15 @@ fn test_failing_test_output() {
         .cargo_run(&[]);
 
     // For example:
-    //   Draw 1: 0
+    //   let draw_1 = 0;
     //   thread 'main' (1) panicked at src/main.rs:7:9:
     //   intentional failure: 0
     //   note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
     assert_matches_regex(
         &output.stderr,
         concat!(
-            r"Draw 1: -?\d+\n",
-            r"thread '.*' \(\d+\) panicked at src/main\.rs:\d+:\d+:\n",
+            r"let draw_1 = -?\d+;\n",
+            r"thread '.*' \(\d+\) panicked at src[/\\]main\.rs:\d+:\d+:\n",
             r"intentional failure: -?\d+",
         ),
     );
@@ -46,9 +46,9 @@ fn test_failing_test_output_with_backtrace() {
 
     // We've seen `{{closure}}` on stable Linux and `{closure#0}` on nightly and
     // macOS stable (the exact conditions aren't fully understood). Accept both.
-    let closure_name = r"(?:\{closure#0\}|\{\{closure\}\})";
+    let closure_name = r"(?:\{closure#0\}|\{\{closure\}\}|closure\$0)";
     // For example:
-    //   Draw 1: 0
+    //   let draw_1 = 0;
     //   thread 'main' (1) panicked at src/main.rs:7:9:
     //   intentional failure: 0
     //   stack backtrace:
@@ -66,19 +66,18 @@ fn test_failing_test_output_with_backtrace() {
         &format!(
             concat!(
                 r"(?s)",
-                r"Draw 1: -?\d+\n",
-                r"thread 'main' \(\d+\) panicked at src/main\.rs:\d+:\d+:\n",
+                r"let draw_1 = -?\d+;\n",
+                r"thread 'main' \(\d+\) panicked at src[/\\]main\.rs:\d+:\d+:\n",
                 r"intentional failure: -?\d+\n",
                 r"stack backtrace:\n",
-                r"\s+0: .*\n", // frame 0: panic machinery
                 r".*",
-                r"\s+1: core::panicking::panic_fmt\n", // frame 1: panic_fmt
+                r"core::panicking::panic_fmt\n", // panic_fmt frame
                 r".*",
-                r"\s+2: temp_hegel_test_\d+::main::{closure_name}\n", // frame 2: user's closure
+                r"temp_hegel_test_\d+_\d+::main::{closure_name}\n", // user's closure
                 r".*",
                 r"hegel::runner::", // hegel internals appear
                 r".*",
-                r"temp_hegel_test_\d+::main\n", // user's main (not closure)
+                r"temp_hegel_test_\d+_\d+::main\n", // user's main (not closure)
                 r".*",
                 r"note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace\.",
             ),
@@ -97,23 +96,22 @@ fn test_failing_test_output_with_full_backtrace() {
 
     // We've seen `{{closure}}` on stable Linux and `{closure#0}` on nightly and
     // macOS stable (the exact conditions aren't fully understood). Accept both.
-    let closure_name = r"(?:\{closure#0\}|\{\{closure\}\})";
+    let closure_name = r"(?:\{closure#0\}|\{\{closure\}\}|closure\$0)";
     assert_matches_regex(
         &output.stderr,
         &format!(
             concat!(
                 r"(?s)",
-                r"Draw 1: -?\d+\n",
-                r"thread 'main' \(\d+\) panicked at src/main\.rs:\d+:\d+:\n",
+                r"let draw_1 = -?\d+;\n",
+                r"thread 'main' \(\d+\) panicked at src[/\\]main\.rs:\d+:\d+:\n",
                 r"intentional failure: -?\d+\n",
                 r"stack backtrace:\n",
-                r"\s+0: .*\n", // starts at frame 0
                 r".*",
-                r"temp_hegel_test_\d+::main::{closure_name}", // user's closure
+                r"temp_hegel_test_\d+_\d+::main::{closure_name}", // user's closure
                 r".*",
                 r"hegel::runner::", // hegel internals
                 r".*",
-                r"temp_hegel_test_\d+::main\n", // user's main
+                r"temp_hegel_test_\d+_\d+::main\n", // user's main
                 r".*$",
             ),
             closure_name = closure_name,

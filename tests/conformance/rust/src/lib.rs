@@ -1,5 +1,6 @@
 //! Metrics utilities for conformance tests.
 
+use hegel::generators::{BoxedGenerator, Generator};
 use serde::Serialize;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -23,14 +24,26 @@ pub fn get_test_cases() -> u64 {
         .unwrap_or(50)
 }
 
+/// Box a generator. If `mode` is `"non_basic"`, wraps it in a trivial
+/// composite so `as_basic()` returns `None`, forcing the compositional
+/// fallback path.
+pub fn maybe_non_basic<T: std::fmt::Debug + 'static>(
+    generator: impl Generator<T> + 'static,
+    mode: &str,
+) -> BoxedGenerator<'static, T> {
+    if mode == "non_basic" {
+        hegel::compose!(|tc| { tc.draw(&generator) }).boxed()
+    } else {
+        generator.boxed()
+    }
+}
+
 /// Write metrics as a JSON line to the metrics file.
 pub fn write<T: Serialize>(metrics: &T) {
     // We need interior mutability for the file handle
     if let Some(ref file) = *get_metrics_file() {
         // Clone the file handle to get a mutable reference
-        let mut file = file
-            .try_clone()
-            .unwrap();
+        let mut file = file.try_clone().unwrap();
         let json = serde_json::to_string(metrics).unwrap();
         writeln!(file, "{}", json).unwrap();
     }

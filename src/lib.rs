@@ -78,7 +78,7 @@
 //! primitive generators, such as [`integers`](generators::integers),
 //! [`floats`](generators::floats), and [`text`](generators::text), and combinators that allow
 //! you to make generators out of other generators, such as [`vecs`](generators::vecs) and
-//! `tuples`.
+//! [`tuples`].
 //!
 //! For example, you can use [`vecs`](generators::vecs) to generate a vector of integers:
 //!
@@ -177,6 +177,39 @@
 //! }
 //! ```
 //!
+//! ## Threading
+//!
+//! [`TestCase`] is `Send` but not `Sync`: you can clone it and move the clone
+//! to another thread to drive generation from there.
+//!
+//! ```no_run
+//! use hegel::TestCase;
+//! use hegel::generators as gs;
+//!
+//! #[hegel::test]
+//! fn test_with_worker_thread(tc: TestCase) {
+//!     let tc_worker = tc.clone();
+//!     let handle = std::thread::spawn(move || {
+//!         tc_worker.draw(gs::vecs(gs::integers::<i32>()).max_size(10))
+//!     });
+//!     let xs = handle.join().unwrap();
+//!     let more: bool = tc.draw(gs::booleans());
+//!     let _ = (xs, more);
+//! }
+//! ```
+//!
+//! Clones share the same backend connection — they are views onto one test
+//! case, not independent test cases. Individual backend calls are serialised
+//! by a shared mutex, so code like "spawn worker, worker draws, join, main
+//! thread draws" is deterministic.
+//!
+//! **Using threads is currently extremely fragile and should only be used with
+//! extreme caution right now.** You are liable to get flaky test failures when
+//! multiple threads draw concurrently. We intend to support this use case
+//! increasingly well over time, but right now it is a significant footgun —
+//! see [`TestCase`]'s documentation for the full contract and the patterns
+//! that are safe to rely on.
+//!
 //! ## Learning more
 //!
 //! - Browse the [`generators`] module for the full list of available generators.
@@ -186,7 +219,10 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub(crate) mod antithesis;
+pub mod backend;
+pub(crate) mod cli;
 pub(crate) mod control;
+pub mod explicit_test_case;
 pub mod generators;
 pub(crate) mod protocol;
 pub(crate) mod runner;
@@ -197,6 +233,7 @@ mod uv;
 
 #[doc(hidden)]
 pub use control::currently_in_test_context;
+pub use explicit_test_case::ExplicitTestCase;
 pub use generators::Generator;
 pub use test_case::TestCase;
 
@@ -206,7 +243,9 @@ pub use ciborium;
 #[doc(hidden)]
 pub use paste;
 #[doc(hidden)]
-pub use test_case::{__IsTestCase, __assert_is_test_case, generate_from_schema, generate_raw};
+pub use test_case::{
+    __IsTestCase, __assert_is_test_case, generate_from_schema, generate_raw, with_output_override,
+};
 
 // re-export public api
 #[doc(hidden)]
@@ -295,6 +334,10 @@ pub use hegel_macros::DefaultGenerator;
 /// }
 /// ```
 pub use hegel_macros::composite;
+pub use hegel_macros::explicit_test_case;
+
+#[doc(hidden)]
+pub use hegel_macros::rewrite_draws;
 
 /// Derive a [`StateMachine`](crate::stateful::StateMachine) implementation from an `impl` block.
 ///
@@ -327,6 +370,63 @@ pub use hegel_macros::state_machine;
 /// ```
 pub use hegel_macros::test;
 
+/// Turn a function into a standalone Hegel binary entry point.
+///
+/// The function must take exactly one parameter of type [`TestCase`]. Behaves
+/// like [`test`] — draws are rewritten to record variable names, and any
+/// `#[hegel::explicit_test_case]` attributes are run first — but instead of
+/// producing a `#[test]` it produces a plain function body that parses CLI
+/// arguments and runs a [`Hegel`] driver.
+///
+/// Supported CLI flags (with defaults taken from the attribute args):
+/// `--test-cases`, `--seed`, `--verbosity`, `--derandomize`, `--database`,
+/// `--suppress-health-check`, `-h` / `--help`.
+///
+/// ```ignore
+/// use hegel::TestCase;
+/// use hegel::generators as gs;
+///
+/// #[hegel::main(test_cases = 500)]
+/// fn main(tc: TestCase) {
+///     let n: i32 = tc.draw(gs::integers());
+///     assert_eq!(n + 0, n);
+/// }
+/// ```
+pub use hegel_macros::main;
+
+/// Rewrite a function taking a [`TestCase`] plus additional arguments into
+/// one that takes just those arguments and internally runs Hegel.
+///
+/// Behaves like [`test`] for name rewriting, explicit test cases, and
+/// settings parsing. The generated function has the original signature
+/// with the `TestCase` parameter removed, and its body is run as an
+/// [`FnMut`] closure inside [`Hegel::run`].
+///
+/// ```ignore
+/// use hegel::TestCase;
+/// use hegel::generators as gs;
+///
+/// #[hegel::standalone_function(test_cases = 10)]
+/// fn check_addition_commutative(tc: TestCase, increment: i32) {
+///     let n: i32 = tc.draw(gs::integers());
+///     assert_eq!(n + increment, increment + n);
+/// }
+///
+/// // callers invoke it as a normal function:
+/// # fn _example() {
+/// check_addition_commutative(5);
+/// # }
+/// ```
+pub use hegel_macros::standalone_function;
+
+#[doc(hidden)]
+pub use cli::CliOutcome;
+#[doc(hidden)]
+pub use cli::apply_cli_args as __apply_cli_args;
+#[doc(hidden)]
+pub use runner::__test_kill_server;
+#[doc(hidden)]
+pub use runner::format_log_excerpt;
 #[doc(hidden)]
 pub use runner::hegel;
 pub use runner::{HealthCheck, Hegel, Settings, Verbosity};
