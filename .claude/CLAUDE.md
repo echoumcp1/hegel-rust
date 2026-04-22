@@ -106,3 +106,7 @@ This project enforces 100% line coverage for new code. You may not add `// nocov
 ### Conformance Tests
 
 Located in `tests/conformance/`. Rust test binaries in `tests/conformance/rust/src/bin/` are invoked by a Python test runner (`tests/conformance/test_conformance.py`) that validates generators produce values matching their declared constraints.
+
+### Pull Requests
+
+When creating a pull request, always create it as a **draft**. The human must provide the title and a short description. Any AI-generated content (implementation details, test summaries, etc.) must go inside a `<details>` block after the human-provided description.
