@@ -31,6 +31,11 @@ impl<T: Send + Sync> Generator<T> for DeferredGenerator<T> {
 /// to provide the actual implementation. `set` consumes the definition,
 /// ensuring it can only be called once.
 ///
+/// # Panics
+///
+/// Drawing from a generator handle before [`set()`](Self::set) has been
+/// called will panic.
+///
 /// # Example
 ///
 /// ```no_run
