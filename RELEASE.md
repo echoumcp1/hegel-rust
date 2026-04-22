@@ -5,9 +5,16 @@ This patch adds `generators::deferred()`, which creates a generator that can be 
 ```rust
 use hegel::generators::{self as gs, Generator};
 
-let x = gs::deferred::<i32>();
-let y = gs::deferred::<i32>();
+enum Tree {
+    Leaf(i32),
+    Branch(Box<Tree>, Box<Tree>),
+}
 
-y.set(hegel::one_of!(gs::integers::<i32>().min_value(0).max_value(10), x.clone()).boxed());
-x.set(hegel::one_of!(gs::integers::<i32>().min_value(100).max_value(110), y.clone()).boxed());
+let tree = gs::deferred::<Tree>();
+let leaf = gs::integers::<i32>().map(Tree::Leaf);
+let branch = hegel::tuples!(tree.generator(), tree.generator())
+    .map(|(l, r)| Tree::Branch(Box::new(l), Box::new(r)));
+tree.set(hegel::one_of!(leaf, branch));
 ```
+
+Call `.generator()` to get handles that can be passed to other generators, then call `.set()` to provide the actual implementation. `set` consumes the definition, so it can only be called once.
