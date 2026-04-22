@@ -1,6 +1,6 @@
-RELEASE_TYPE: minor
+RELEASE_TYPE: patch
 
-This release adds `generators::deferred()`, which creates a generator that can be declared before it is defined. This enables forward references, which are needed for defining mutually recursive or self-recursive generators.
+This patch adds `generators::deferred()`, which creates a generator that can be declared before it is defined. This enables forward references, which are needed for defining mutually recursive or self-recursive generators.
 
 ```rust
 use hegel::generators::{self as gs, Generator};
