@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2 - 2026-04-27
+
+Small internal refactors.
+
 ## 0.8.1 - 2026-04-25
 
 This release implements `DefaultGenerator` for `PathBuf`.
