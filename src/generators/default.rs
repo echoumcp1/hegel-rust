@@ -6,6 +6,7 @@ use super::{
 };
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// Trait for types that have a default generator.
@@ -203,6 +204,13 @@ impl DefaultGenerator for Duration {
     }
 }
 
+impl DefaultGenerator for PathBuf {
+    type Generator = BoxedGenerator<'static, PathBuf>;
+    fn default_generator() -> Self::Generator {
+        text().map(PathBuf::from).boxed()
+    }
+}
+
 impl<K: DefaultGenerator + 'static, V: DefaultGenerator + 'static> DefaultGenerator
     for HashMap<K, V>
 where
@@ -310,10 +318,10 @@ macro_rules! derive_generator {
                 }
 
                 impl<'a> $crate::generators::Generator<$struct_name> for [<$struct_name Generator>]<'a> {
-                    fn do_draw(&self, __data: &$crate::TestCase) -> $struct_name {
+                    fn do_draw(&self, __tc: &$crate::TestCase) -> $struct_name {
                         use $crate::generators::Generator;
                         $struct_name {
-                            $($field_name: self.$field_name.do_draw(__data),)*
+                            $($field_name: self.$field_name.do_draw(__tc),)*
                         }
                     }
                 }
