@@ -167,19 +167,21 @@ fn test_rationals_finds_whole_number() {
 #[test]
 fn test_rationals_custom_numerator_denominator() {
     let generator = gs::rationals::<BigInt>()
-        .numerator(
-            gs::integers::<BigInt>()
-                .min_value(BigInt::from(0))
-                .max_value(BigInt::from(100)),
-        )
-        .denominator(
-            gs::integers::<BigInt>()
-                .min_value(BigInt::from(1))
-                .max_value(BigInt::from(10)),
-        );
+        .min_value(BigInt::from(0))
+        .max_value(BigInt::from(100));
     assert_all_examples(generator, |r| {
         *r.numer() >= BigInt::zero() && *r.denom() >= BigInt::one()
     });
+}
+
+#[test]
+#[should_panic(expected = "max_value * max_denominator overflows the numerator type")]
+fn test_rationals_overflow() {
+    use hegel::generators::Generator;
+    gs::rationals::<i32>()
+        .min_value(1230123)
+        .max_value(2230123)
+        .as_basic();
 }
 
 #[test]

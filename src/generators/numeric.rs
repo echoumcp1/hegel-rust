@@ -15,27 +15,52 @@ pub trait Integer: Clone + Ord + Send + Sync + 'static {
     fn default_max() -> Self;
     /// The value `1` — used by derived builders that need a positive lower bound.
     fn one() -> Self;
+    /// Default minimum value when used as `Ratio<Self>`. For fixed-width types
+    /// this is tightened so `min × max_denominator` cannot underflow the numerator.
+    fn rational_default_min() -> Self {
+        Self::default_min()
+    }
+    /// Default maximum value when used as `Ratio<Self>`. For fixed-width types
+    /// this is tightened so `max × max_denominator` cannot overflow the numerator.
+    fn rational_default_max() -> Self {
+        Self::default_max()
+    }
     /// Encode this value as a CBOR integer or bignum tag for the schema.
     fn to_cbor(&self) -> Value;
     /// Decode a CBOR value produced by the server into `Self`.
     fn from_cbor(v: Value) -> Self;
 }
 
-macro_rules! impl_integer_type {
+macro_rules! impl_signed_integer {
     ($($t:ty),*) => { $(
         impl Integer for $t {
             fn default_min() -> Self { <$t>::MIN }
             fn default_max() -> Self { <$t>::MAX }
             fn one() -> Self { 1 }
+            fn rational_default_min() -> Self { -<$t>::MAX.isqrt() }
+            fn rational_default_max() -> Self { <$t>::MAX.isqrt() }
             fn to_cbor(&self) -> Value { cbor_serialize(self) }
             fn from_cbor(v: Value) -> Self { super::deserialize_value(v) }
         }
     )* };
 }
 
-impl_integer_type!(
-    i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize
-);
+macro_rules! impl_unsigned_integer {
+    ($($t:ty),*) => { $(
+        impl Integer for $t {
+            fn default_min() -> Self { <$t>::MIN }
+            fn default_max() -> Self { <$t>::MAX }
+            fn one() -> Self { 1 }
+            fn rational_default_min() -> Self { 0 }
+            fn rational_default_max() -> Self { <$t>::MAX.isqrt() }
+            fn to_cbor(&self) -> Value { cbor_serialize(self) }
+            fn from_cbor(v: Value) -> Self { super::deserialize_value(v) }
+        }
+    )* };
+}
+
+impl_signed_integer!(i8, i16, i32, i64, i128, isize);
+impl_unsigned_integer!(u8, u16, u32, u64, u128, usize);
 
 /// Trait bound for float types usable with [`floats()`].
 pub trait Float: Copy + PartialOrd {

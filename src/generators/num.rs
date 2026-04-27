@@ -1,11 +1,12 @@
-use super::{Generator, TestCase};
+use super::{BasicGenerator, Generator, TestCase};
+use crate::utils::cbor_utils::{cbor_map, map_get};
 use crate::utils::num::{cbor_to_bigint, cbor_to_biguint, int_to_cbor};
 use ciborium::Value;
 use num_bigint::{BigInt, BigUint};
 use num_complex::Complex;
 use num_integer::Integer as NumInteger;
 use num_rational::Ratio;
-use num_traits::{Num, One, Zero};
+use num_traits::{CheckedMul, Num, One, Zero};
 
 // ---------------------------------------------------------------------------
 // Integer impls for BigInt/BigUint
@@ -56,39 +57,79 @@ impl super::Integer for BigUint {
 /// Generates a numerator and denominator independently, with the denominator
 /// constrained to be non-zero. The resulting `Ratio` is automatically reduced
 /// to lowest terms by `Ratio::new()`.
-pub struct RationalGenerator<NG, DG> {
-    numer_gen: NG,
-    denom_gen: DG,
+pub struct RationalGenerator<T> {
+    min: Option<T>,
+    max: Option<T>,
+    max_denom: Option<T>,
 }
 
-impl<NG, DG> RationalGenerator<NG, DG> {
-    /// Set the numerator generator.
-    pub fn numerator<NG2>(self, numer_gen: NG2) -> RationalGenerator<NG2, DG> {
-        RationalGenerator {
-            numer_gen,
-            denom_gen: self.denom_gen,
-        }
+impl<T> RationalGenerator<T> {
+    /// Set the minimum value (inclusive).
+    pub fn min_value(mut self, min_value: T) -> Self {
+        self.min = Some(min_value);
+        self
     }
 
-    /// Set the denominator generator. Must not produce zero.
-    pub fn denominator<DG2>(self, denom_gen: DG2) -> RationalGenerator<NG, DG2> {
-        RationalGenerator {
-            numer_gen: self.numer_gen,
-            denom_gen,
+    /// Set the maximum value (inclusive).
+    pub fn max_value(mut self, max_value: T) -> Self {
+        self.max = Some(max_value);
+        self
+    }
+
+    /// Set the maximum allowed denominator (inclusive).
+    pub fn max_denominator(mut self, max_denom: T) -> Self {
+        self.max_denom = Some(max_denom);
+        self
+    }
+}
+
+impl<T: NumInteger + super::Integer + CheckedMul> RationalGenerator<T> {
+    fn build_schema(&self) -> Value {
+        let min = self.min.clone().unwrap_or_else(T::rational_default_min);
+        let max = self.max.clone().unwrap_or_else(T::rational_default_max);
+        let max_denom = self
+            .max_denom
+            .clone()
+            .unwrap_or_else(T::rational_default_max);
+
+        assert!(
+            max_denom >= <T as super::Integer>::one(),
+            "max_denominator must be >= 1"
+        );
+        assert!(
+            max.checked_mul(&max_denom).is_some(),
+            "max_value * max_denominator overflows the numerator type"
+        );
+        assert!(
+            min.checked_mul(&max_denom).is_some(),
+            "min_value * max_denominator overflows the numerator type"
+        );
+
+        cbor_map! {
+            "type" => "rational",
+            "min_value" => min.to_cbor(),
+            "max_value" => max.to_cbor(),
+            "max_denominator" => max_denom.to_cbor()
         }
     }
 }
 
-impl<T, NG, DG> Generator<Ratio<T>> for RationalGenerator<NG, DG>
+fn parse_ratio<T: super::Integer + NumInteger>(v: Value) -> Ratio<T> {
+    let numer = T::from_cbor(map_get(&v, "numerator").cloned().unwrap());
+    let denom = T::from_cbor(map_get(&v, "denominator").cloned().unwrap());
+    Ratio::new(numer, denom)
+}
+
+impl<T> Generator<Ratio<T>> for RationalGenerator<T>
 where
-    NG: Generator<T>,
-    DG: Generator<T>,
-    T: Clone + NumInteger,
+    T: super::Integer + NumInteger + CheckedMul,
 {
     fn do_draw(&self, tc: &TestCase) -> Ratio<T> {
-        let numer = self.numer_gen.do_draw(tc);
-        let denom = self.denom_gen.do_draw(tc);
-        Ratio::new(numer, denom)
+        parse_ratio::<T>(super::generate_raw(tc, &self.build_schema()))
+    }
+
+    fn as_basic(&self) -> Option<BasicGenerator<'_, Ratio<T>>> {
+        Some(BasicGenerator::new(self.build_schema(), parse_ratio::<T>))
     }
 }
 
@@ -116,11 +157,11 @@ where
 ///     assert!(*r.numer() >= 0 && *r.denom() >= 1);
 /// }
 /// ```
-pub fn rationals<T: super::Integer>()
--> RationalGenerator<super::IntegerGenerator<T>, super::IntegerGenerator<T>> {
+pub fn rationals<T: super::Integer>() -> RationalGenerator<T> {
     RationalGenerator {
-        numer_gen: super::integers::<T>(),
-        denom_gen: super::integers::<T>().min_value(<T as super::Integer>::one()),
+        min: None,
+        max: None,
+        max_denom: None,
     }
 }
 
