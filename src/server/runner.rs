@@ -274,17 +274,13 @@ pub fn server_run<F>(
     let got_interesting = AtomicBool::new(false);
 
     let mode = settings.mode;
-    let result = runner.run(
-        settings,
-        database_key,
-        &mut |backend, is_final| {
-            let tc_result = run_test_case(backend, &mut test_fn, is_final, mode);
-            if matches!(&tc_result, TestCaseResult::Interesting { .. }) {
-                got_interesting.store(true, Ordering::SeqCst);
-            }
-            tc_result
-        },
-    );
+    let result = runner.run(settings, database_key, &mut |backend, is_final| {
+        let tc_result = run_test_case(backend, &mut test_fn, is_final, mode);
+        if matches!(&tc_result, TestCaseResult::Interesting { .. }) {
+            got_interesting.store(true, Ordering::SeqCst);
+        }
+        tc_result
+    });
 
     let test_failed = !result.passed || got_interesting.load(Ordering::SeqCst);
 
@@ -297,7 +293,7 @@ pub fn server_run<F>(
 
         #[cfg(feature = "antithesis")]
         // nocov start
-        if let Some(ref loc) = test_location {
+        if let Some(loc) = test_location {
             crate::antithesis::emit_assertion(loc, !test_failed);
             // nocov end
         }

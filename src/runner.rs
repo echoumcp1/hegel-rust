@@ -255,50 +255,12 @@ where
     ///
     /// Panics if any test case fails.
     pub fn run(self) {
-        init_panic_hook();
-
-        let runner = ServerTestRunner;
-        let mut test_fn = self.test_fn;
-        let got_interesting = AtomicBool::new(false);
-
-        let result = runner.run(
+        crate::server::runner::server_run(
+            self.test_fn,
             &self.settings,
             self.database_key.as_deref(),
-            &mut |backend, is_final| {
-                let tc_result = run_test_case(backend, &mut test_fn, is_final, self.settings.mode);
-                if matches!(&tc_result, TestCaseResult::Interesting { .. }) {
-                    got_interesting.store(true, Ordering::SeqCst);
-                }
-                tc_result
-            },
+            self.test_location.as_ref(),
         );
-
-        let test_failed = !result.passed || got_interesting.load(Ordering::SeqCst);
-
-        if is_running_in_antithesis() {
-            #[cfg(not(feature = "antithesis"))]
-            panic!(
-                "When Hegel is run inside of Antithesis, it requires the `antithesis` feature. \
-                You can add it with {{ features = [\"antithesis\"] }}."
-            );
-
-            #[cfg(feature = "antithesis")]
-            // nocov start
-            if let Some(ref loc) = self.test_location {
-                crate::antithesis::emit_assertion(loc, !test_failed);
-                // nocov end
-            }
-        }
-
-        #[cfg(not(feature = "native"))]
-        {
-            crate::server::runner::server_run(
-                self.test_fn,
-                &self.settings,
-                self.database_key.as_deref(),
-                self.test_location.as_ref(),
-            );
-        }
     }
 }
 
