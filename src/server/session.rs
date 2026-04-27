@@ -202,15 +202,7 @@ impl ServerTestRunner {
         let mut passed = true;
 
         loop {
-            let (event_id, event_payload) = match test_stream.receive_request() {
-                Ok(event) => event,
-                // nocov start
-                Err(_) if connection.server_has_exited() => {
-                    panic!("{}", server_crash_message());
-                    // nocov end
-                }
-                Err(e) => unreachable!("Failed to receive event (server still running): {}", e),
-            };
+            let (event_id, event_payload) = receive_event(&mut test_stream, connection);
 
             let event: Value = cbor_decode(&event_payload);
             let event_type = map_get(&event, "event")
@@ -340,15 +332,7 @@ impl TestRunner for ServerTestRunner {
         loop {
             // Handle the server dying between events: receive_request will
             // fail with RecvError once the background reader clears the senders.
-            let (event_id, event_payload) = match test_stream.receive_request() {
-                Ok(event) => event,
-                // nocov start
-                Err(_) if connection.server_has_exited() => {
-                    panic!("{}", server_crash_message());
-                    // nocov end
-                }
-                Err(e) => unreachable!("Failed to receive event (server still running): {}", e),
-            };
+            let (event_id, event_payload) = receive_event(&mut test_stream, connection);
 
             let event: Value = cbor_decode(&event_payload);
             let event_type = map_get(&event, "event")
@@ -461,6 +445,18 @@ impl TestRunner for ServerTestRunner {
             passed,
             failure_message,
         }
+    }
+}
+
+fn receive_event(test_stream: &mut Stream, connection: &Connection) -> (u32, Vec<u8>) {
+    match test_stream.receive_request() {
+        Ok(event) => event,
+        // nocov start
+        Err(_) if connection.server_has_exited() => {
+            panic!("{}", server_crash_message());
+            // nocov end
+        }
+        Err(e) => unreachable!("Failed to receive event (server still running): {}", e),
     }
 }
 
