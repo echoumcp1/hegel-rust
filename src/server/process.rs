@@ -81,36 +81,22 @@ fn startup_error_message(
     binary_path: Option<&str>,
     exit_status: std::process::ExitStatus,
 ) -> String {
+    let version_check = binary_path.map(|p| (p, Command::new(p).arg("--version").output()));
+    startup_error_message_from_version(version_check, exit_status)
+}
+
+fn startup_error_message_from_version(
+    version_check: Option<(&str, std::io::Result<std::process::Output>)>,
+    exit_status: std::process::ExitStatus,
+) -> String {
     let mut parts = Vec::new();
 
     parts.push("The hegel server failed during startup handshake.".to_string());
     parts.push(format!("The server process exited with {}.", exit_status));
 
-    // Version detection via --version (only when we have a binary path to check)
-    if let Some(binary_path) = binary_path {
-        let expected_version_string = format!("hegel (version {})", HEGEL_SERVER_VERSION);
-        match Command::new(binary_path).arg("--version").output() {
-            Ok(output) if output.status.success() => {
-                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if stdout != expected_version_string {
-                    parts.push(format!(
-                        "Version mismatch: expected '{}', got '{}'.",
-                        expected_version_string, stdout
-                    ));
-                }
-            }
-            Ok(_) => {
-                parts.push(format!(
-                    "'{}' --version exited unsuccessfully. Is this a hegel binary?",
-                    binary_path
-                ));
-            }
-            Err(e) => {
-                parts.push(format!(
-                    "Could not run '{}' --version: {}. Is this a hegel binary?",
-                    binary_path, e
-                ));
-            }
+    if let Some((binary_path, version_result)) = version_check {
+        if let Some(msg) = version_check_message(binary_path, version_result) {
+            parts.push(msg);
         }
     }
 
@@ -131,6 +117,34 @@ fn startup_error_message(
     }
 
     parts.join("\n\n")
+}
+
+fn version_check_message(
+    binary_path: &str,
+    version_result: std::io::Result<std::process::Output>,
+) -> Option<String> {
+    let expected_version_string = format!("hegel (version {})", HEGEL_SERVER_VERSION);
+    match version_result {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if stdout != expected_version_string {
+                Some(format!(
+                    "Version mismatch: expected '{}', got '{}'.",
+                    expected_version_string, stdout
+                ))
+            } else {
+                None
+            }
+        }
+        Ok(_) => Some(format!(
+            "'{}' --version exited unsuccessfully. Is this a hegel binary?",
+            binary_path
+        )),
+        Err(e) => Some(format!(
+            "Could not run '{}' --version: {}. Is this a hegel binary?",
+            binary_path, e
+        )),
+    }
 }
 
 fn resolve_hegel_path(path: &str) -> String {
