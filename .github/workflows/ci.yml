@@ -305,8 +305,8 @@ jobs:
       - name: Run conformance tests
         run: just check-conformance
 
-  scripts:
-    name: scripts
+  whole-repo:
+    name: whole-repo
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -319,8 +319,8 @@ jobs:
         with:
           tools: just uv
 
-      - name: Run script tests
-        run: just check-tests-scripts
+      - name: Run whole-repo tests
+        run: just check-tests-whole-repo
 
   nix:
     name: nix
@@ -342,7 +342,7 @@ jobs:
   release:
     name: release
     if: github.event_name == 'push' && github.repository == 'hegeldev/hegel-rust'
-    needs: [lint, test, test-all-features, test-minimal-versions, docs, coverage, conformance, nix, scripts]
+    needs: [lint, test, test-all-features, test-minimal-versions, docs, coverage, conformance, nix, whole-repo]
     runs-on: ubuntu-latest
     permissions:
       contents: write
