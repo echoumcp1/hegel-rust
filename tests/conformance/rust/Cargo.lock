@@ -150,6 +150,7 @@ version = "0.8.4"
 dependencies = [
  "ciborium",
  "crc32fast",
+ "half",
  "hegeltest-macros",
  "parking_lot",
  "paste",

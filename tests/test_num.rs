@@ -38,7 +38,7 @@ fn test_big_integers_finds_positive() {
 #[test]
 fn test_big_integers_finds_negative() {
     find_any(
-        gs::integers::<BigInt>().min_value(BigInt::from(-BigInt::one() << 64u32)),
+        gs::integers::<BigInt>().min_value(-BigInt::one() << 64u32),
         |n| *n < BigInt::from(-1_000_000),
     );
 }
