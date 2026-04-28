@@ -1,4 +1,9 @@
-import bump_hegel_core  # pyright: ignore[reportMissingImports]
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / ".github" / "scripts"))
+
+import bump_hegel_core  # noqa: E402  # pyright: ignore[reportMissingImports]
 
 
 def test_bump_runs_against_real_files() -> None:
