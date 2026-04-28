@@ -47,6 +47,9 @@ docs:
 check-nocov-style:
     scripts/check-nocov-style.py
 
+check-tests-scripts:
+    uv run --with pytest pytest tests/scripts/
+
 check-lint: check-format check-clippy check-nocov-style
 
 check-coverage:

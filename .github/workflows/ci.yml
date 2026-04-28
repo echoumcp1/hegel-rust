@@ -305,6 +305,23 @@ jobs:
       - name: Run conformance tests
         run: just check-conformance
 
+  scripts:
+    name: scripts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/install-tools
+        with:
+          tools: just uv
+
+      - name: Run script tests
+        run: just check-tests-scripts
+
   nix:
     name: nix
     runs-on: ubuntu-latest
@@ -325,7 +342,7 @@ jobs:
   release:
     name: release
     if: github.event_name == 'push' && github.repository == 'hegeldev/hegel-rust'
-    needs: [lint, test, test-all-features, test-minimal-versions, docs, coverage, conformance, nix]
+    needs: [lint, test, test-all-features, test-minimal-versions, docs, coverage, conformance, nix, scripts]
     runs-on: ubuntu-latest
     permissions:
       contents: write
