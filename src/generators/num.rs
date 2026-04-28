@@ -1,5 +1,5 @@
 use super::{BasicGenerator, Generator, TestCase};
-use crate::utils::cbor_utils::{cbor_map, cbor_serialize, map_insert};
+use crate::utils::cbor_utils::{cbor_map, cbor_serialize};
 use crate::utils::num::{cbor_to_bigint, cbor_to_biguint, int_to_cbor};
 use ciborium::Value;
 use num_bigint::{BigInt, BigUint};
@@ -116,7 +116,7 @@ impl<T: NumInteger + super::Integer + CheckedMul> RationalGenerator<T> {
 
 fn parse_ratio<T: super::Integer + NumInteger>(v: Value) -> Ratio<T> {
     let Value::Array(items) = v else {
-        panic!("expected Array for rational, got {v:?}");
+        panic!("expected Array for rational, got {v:?}"); // nocov
     };
     let mut iter = items.into_iter();
     let numer = T::from_cbor(iter.next().unwrap());
@@ -221,27 +221,40 @@ impl<T> ComplexGenerator<T> {
 
 impl<T: super::Float + serde::Serialize> ComplexGenerator<T> {
     fn build_schema(&self) -> Value {
-        let width = (2 * std::mem::size_of::<T>() * 8) as u64;
-        let mut schema = cbor_map! {
+        let min = self.min_magnitude.unwrap_or(T::ZERO);
+        let has_max = self.max_magnitude.is_some();
+
+        if min < T::ZERO || self.max_magnitude.is_some_and(|m| m < T::ZERO) {
+            panic!("min_magnitude and max_magnitude must be non-negative");
+        }
+        if self.allow_nan && (min != T::ZERO || has_max) {
+            panic!("Cannot have allow_nan=true with min_magnitude > 0 or max_magnitude set");
+        }
+        if self.allow_infinity && has_max {
+            panic!("Cannot have allow_infinity=true with max_magnitude set");
+        }
+
+        let max = self.max_magnitude.unwrap_or(if self.allow_infinity {
+            T::INFINITY
+        } else {
+            T::MAX
+        });
+
+        cbor_map! {
             "type" => "complex",
+            "min_magnitude" => cbor_serialize(&min),
+            "max_magnitude" => cbor_serialize(&max),
             "allow_nan" => self.allow_nan,
             "allow_infinity" => self.allow_infinity,
             "allow_subnormal" => self.allow_subnormal,
-            "width" => width,
-        };
-        if let Some(ref min) = self.min_magnitude {
-            map_insert(&mut schema, "min_magnitude", cbor_serialize(min));
+            "width" => (2 * std::mem::size_of::<T>() * 8) as u64,
         }
-        if let Some(ref max) = self.max_magnitude {
-            map_insert(&mut schema, "max_magnitude", cbor_serialize(max));
-        }
-        schema
     }
 }
-
+// jelo :)
 fn parse_complex<T: serde::de::DeserializeOwned>(v: Value) -> Complex<T> {
     let Value::Array(items) = v else {
-        panic!("expected Array for complex, got {v:?}");
+        panic!("expected Array for complex, got {v:?}"); // nocov
     };
     let mut iter = items.into_iter();
     let real: T = super::deserialize_value(iter.next().unwrap());

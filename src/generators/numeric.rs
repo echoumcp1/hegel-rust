@@ -64,20 +64,27 @@ impl_unsigned_integer!(u8, u16, u32, u64, u128, usize);
 
 /// Trait bound for float types usable with [`floats()`].
 pub trait Float: Copy + PartialOrd {
+    const ZERO: Self;
     /// The minimum value of this type.
     const MIN: Self;
     /// The maximum value of this type.
     const MAX: Self;
+
+    const INFINITY: Self;
 }
 
 impl Float for f32 {
+    const ZERO: Self = 0.0;
     const MIN: Self = f32::MIN;
     const MAX: Self = f32::MAX;
+    const INFINITY: Self = f32::INFINITY;
 }
 
 impl Float for f64 {
+    const ZERO: Self = 0.0;
     const MIN: Self = f64::MIN;
     const MAX: Self = f64::MAX;
+    const INFINITY: Self = f64::INFINITY;
 }
 
 /// Generator for integer values. Created by [`integers()`].

@@ -152,7 +152,7 @@ fn test_rationals_reduced() {
 
 #[test]
 fn test_rationals_finds_zero() {
-    find_any(gs::rationals::<i32>(), |r| r.is_zero());
+    find_any(gs::rationals::<u32>(), |r| r.is_zero());
 }
 
 #[test]
@@ -190,6 +190,12 @@ fn test_rationals_overflow() {
 #[test]
 fn test_rationals_biguint_denom_positive() {
     assert_all_examples(gs::rationals::<BigUint>(), |r| *r.denom() > BigUint::zero());
+}
+
+#[test]
+fn test_rational_max_denominator() {
+    let generator = gs::rationals::<BigUint>().max_denominator(BigUint::from(10u32));
+    assert_all_examples(generator, |r| *r.denom() <= BigUint::from(10u32));
 }
 
 // ---------------------------------------------------------------------------
@@ -281,4 +287,52 @@ fn test_complex_f32_bounded_magnitude() {
     assert_all_examples(generator, |c| {
         c.re * c.re + c.im * c.im <= 100.0 * 100.0 + 1e-3
     });
+}
+
+#[test]
+fn test_complex_unbounded_magnitude() {
+    find_any(gs::complex::<f32>().allow_infinity(true), |c| {
+        c.re.is_infinite() || c.im.is_infinite()
+    });
+}
+
+#[test]
+fn test_complex_subnormal() {
+    let generator = gs::complex::<f32>()
+        .min_magnitude(0.0)
+        .allow_subnormal(true);
+    assert_all_examples(generator, |c| {
+        let mag2 = c.re * c.re + c.im * c.im;
+        (mag2 >= 0.0 - 1e-3) || (mag2 > 0.0 && mag2 < 1e-6) // subnormal
+    });
+}
+
+#[test]
+#[should_panic(expected = "Cannot have allow_infinity=true with max_magnitude set")]
+fn test_complex_infinity_error() {
+    use hegel::generators::Generator;
+    gs::complex::<f32>()
+        .max_magnitude(10.0)
+        .allow_infinity(true)
+        .as_basic();
+}
+
+#[test]
+#[should_panic(expected = "Cannot have allow_nan=true with min_magnitude > 0 or max_magnitude set")]
+fn test_complex_nan_error() {
+    use hegel::generators::Generator;
+    gs::complex::<f32>()
+        .min_magnitude(10.0)
+        .allow_nan(true)
+        .as_basic();
+}
+
+#[test]
+#[should_panic(expected = "min_magnitude and max_magnitude must be non-negative")]
+fn test_complex_negative_magnitude() {
+    use hegel::generators::Generator;
+    gs::complex::<f32>()
+        .min_magnitude(-10.0)
+        .max_magnitude(-1.0)
+        .as_basic();
 }
