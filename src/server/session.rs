@@ -16,7 +16,7 @@ use super::process::{
 use super::runner::{cbor_decode, cbor_encode};
 
 pub(super) const SUPPORTED_PROTOCOL_VERSIONS: (&str, &str) = ("0.10", "0.10");
-pub(super) const HEGEL_SERVER_VERSION: &str = "0.4.7";
+pub(super) const HEGEL_SERVER_VERSION: &str = "0.4.14";
 
 pub(super) static SESSION: Mutex<Option<Arc<HegelSession>>> = Mutex::new(None);
 
@@ -80,7 +80,7 @@ impl HegelSession {
 
     fn init() -> HegelSession {
         let mut cmd = hegel_command();
-        cmd.arg("--stdio").arg("--verbosity").arg("normal");
+        cmd.arg("--verbosity").arg("normal");
 
         cmd.env("PYTHONUNBUFFERED", "1");
         let log_file = server_log_file();
