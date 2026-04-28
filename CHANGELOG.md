@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.5 - 2026-04-28
+
+Bump our pinned hegel-core to `0.4.14`.
+
 ## 0.8.4 - 2026-04-27
 
 This patch fixes a flaky test. There are no user visible changes.
