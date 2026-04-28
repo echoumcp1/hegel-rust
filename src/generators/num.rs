@@ -1,8 +1,6 @@
 use super::{BasicGenerator, Generator, TestCase};
 use crate::utils::cbor_utils::{cbor_map, cbor_serialize, map_insert};
-use crate::utils::num::{
-    HEGEL_COMPLEX_TAG, HEGEL_FRACTION_TAG, cbor_to_bigint, cbor_to_biguint, int_to_cbor,
-};
+use crate::utils::num::{cbor_to_bigint, cbor_to_biguint, int_to_cbor};
 use ciborium::Value;
 use num_bigint::{BigInt, BigUint};
 use num_complex::Complex;
@@ -117,15 +115,8 @@ impl<T: NumInteger + super::Integer + CheckedMul> RationalGenerator<T> {
 }
 
 fn parse_ratio<T: super::Integer + NumInteger>(v: Value) -> Ratio<T> {
-    let Value::Tag(tag, inner) = v else {
-        panic!("expected CBOR Tag for rational, got {v:?}");
-    };
-    assert_eq!(
-        tag, HEGEL_FRACTION_TAG,
-        "expected rational tag {HEGEL_FRACTION_TAG}, got {tag}"
-    );
-    let Value::Array(items) = *inner else {
-        panic!("expected Array inside rational tag, got {inner:?}");
+    let Value::Array(items) = v else {
+        panic!("expected Array for rational, got {v:?}");
     };
     let mut iter = items.into_iter();
     let numer = T::from_cbor(iter.next().unwrap());
@@ -249,15 +240,8 @@ impl<T: super::Float + serde::Serialize> ComplexGenerator<T> {
 }
 
 fn parse_complex<T: serde::de::DeserializeOwned>(v: Value) -> Complex<T> {
-    let Value::Tag(tag, inner) = v else {
-        panic!("expected CBOR Tag for complex, got {v:?}");
-    };
-    assert_eq!(
-        tag, HEGEL_COMPLEX_TAG,
-        "expected complex tag {HEGEL_COMPLEX_TAG}, got {tag}"
-    );
-    let Value::Array(items) = *inner else {
-        panic!("expected Array inside complex tag, got {inner:?}");
+    let Value::Array(items) = v else {
+        panic!("expected Array for complex, got {v:?}");
     };
     let mut iter = items.into_iter();
     let real: T = super::deserialize_value(iter.next().unwrap());
@@ -298,5 +282,6 @@ pub fn complex<T: super::Float>() -> ComplexGenerator<T> {
         max_magnitude: None,
         allow_nan: false,
         allow_infinity: false,
+        allow_subnormal: true,
     }
 }
