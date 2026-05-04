@@ -144,7 +144,6 @@ fn decode_header<R: Read>(decoder: &mut Decoder<R>, header: Header) -> io::Resul
             ciborium_ll::simple::FALSE => Value::Bool(false),
             ciborium_ll::simple::TRUE => Value::Bool(true),
             ciborium_ll::simple::NULL => Value::Null,
-            ciborium_ll::simple::UNDEFINED => Value::Null,
             _ => panic!("unexpected simple value: {simple:?}"),
         }),
         Header::Break => Err(io::Error::new(

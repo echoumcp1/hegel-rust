@@ -278,6 +278,41 @@ fn test_unsupported_simple_value() {
 }
 
 #[test]
+fn test_unexpected_break_at_top_level() {
+    // Bare 0xff (CBOR break) outside an indefinite-length collection.
+    let data = [0xff_u8];
+    let err = read_value(&mut &data[..]).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("unexpected CBOR break"));
+}
+
+#[test]
+fn test_unexpected_break_in_definite_array() {
+    // Definite-length array of 2 elements but second slot is 0xff (break).
+    let data = [0x82, 0x01, 0xff];
+    let err = read_value(&mut &data[..]).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("unexpected CBOR break"));
+}
+
+#[test]
+fn test_io_error_is_propagated() {
+    struct FailingReader;
+    impl io::Read for FailingReader {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "boom"))
+        }
+    }
+    let err = read_value(&mut FailingReader).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("BrokenPipe"),
+        "unexpected error message: {msg}"
+    );
+    assert!(msg.contains("boom"), "unexpected error message: {msg}");
+}
+
+#[test]
 fn test_nested_map_with_bignum() {
     let big_bytes = vec![0xFF; 17];
     let v = Value::Map(vec![(
