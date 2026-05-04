@@ -140,12 +140,15 @@ fn decode_header<R: Read>(decoder: &mut Decoder<R>, header: Header) -> io::Resul
             let inner = pull_value(decoder)?;
             Ok(Value::Tag(tag, Box::new(inner))) // bigint are parsed here
         }
-        Header::Simple(simple) => Ok(match simple {
-            ciborium_ll::simple::FALSE => Value::Bool(false),
-            ciborium_ll::simple::TRUE => Value::Bool(true),
-            ciborium_ll::simple::NULL => Value::Null,
-            _ => panic!("unexpected simple value: {simple:?}"),
-        }),
+        Header::Simple(simple) => match simple {
+            ciborium_ll::simple::FALSE => Ok(Value::Bool(false)),
+            ciborium_ll::simple::TRUE => Ok(Value::Bool(true)),
+            ciborium_ll::simple::NULL | ciborium_ll::simple::UNDEFINED => Ok(Value::Null),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unexpected simple value: {simple}"),
+            )),
+        },
         Header::Break => Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "unexpected CBOR break",

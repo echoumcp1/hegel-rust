@@ -236,11 +236,19 @@ fn test_two_byte_simple_true() {
 }
 
 #[test]
-#[should_panic(expected = "unexpected simple value: 255")]
-fn test_two_byte_simple_other_is_null() {
+fn test_unassigned_simple_value_errors() {
     // Major 7, additional 24 = 0xf8, then value 255 (unassigned simple)
     let data = [0xf8, 255];
-    read_value(&mut &data[..]).unwrap();
+    let err = read_value(&mut &data[..]).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("unexpected simple value: 255"));
+}
+
+#[test]
+fn test_undefined_becomes_null() {
+    // Major 7, additional 23 = 0xf7 (UNDEFINED simple value)
+    let data = [0xf7];
+    assert_eq!(read_value(&mut &data[..]).unwrap(), Value::Null);
 }
 
 #[test]
