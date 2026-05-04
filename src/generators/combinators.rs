@@ -40,6 +40,10 @@ impl<'a, T: Clone + Send + Sync + 'a> Generator<T> for SampledFromGenerator<'a, 
             elements[index].clone()
         }))
     }
+
+    fn enumerate_values(&self) -> Option<Vec<T>> {
+        Some(self.elements.to_vec())
+    }
 }
 
 /// Pick from a fixed list of values.
@@ -179,7 +183,7 @@ where
         let inner_basic = self.inner.as_basic()?;
         let inner_schema = inner_basic.schema().clone();
 
-        let null_schema = cbor_map! {"type" => "null"};
+        let null_schema = cbor_map! {"type" => "constant", "value" => Value::Null};
         let schema =
             cbor_map! {"type" => "one_of", "generators" => cbor_array![null_schema, inner_schema]};
 
