@@ -1,4 +1,5 @@
 use ciborium::Value;
+use ciborium_ll::{Decoder, Header};
 use std::io::{self, Read};
 
 /// Build a `ciborium::Value::Map`:
@@ -109,168 +110,127 @@ pub fn cbor_serialize<T: serde::Serialize>(value: &T) -> Value {
 }
 
 pub fn read_value(r: &mut impl Read) -> io::Result<Value> {
-    let initial = read_u8(r)?;
-    decode(r, initial)
+    let mut decoder = Decoder::from(r);
+    pull_value(&mut decoder)
 }
 
-fn read_u8(r: &mut impl Read) -> io::Result<u8> {
-    let mut b = [0u8; 1];
-    r.read_exact(&mut b)?;
-    Ok(b[0])
+fn pull_value<R: Read>(decoder: &mut Decoder<R>) -> io::Result<Value> {
+    let header = decoder.pull().map_err(map_decoder_err)?;
+    decode_header(decoder, header)
 }
 
-fn read_argument(r: &mut impl Read, additional: u8) -> io::Result<u64> {
-    match additional {
-        0..=23 => Ok(additional as u64),
-        24 => Ok(read_u8(r)? as u64),
-        25 => {
-            let mut b = [0u8; 2];
-            r.read_exact(&mut b)?;
-            Ok(u16::from_be_bytes(b) as u64)
+fn decode_header<R: Read>(decoder: &mut Decoder<R>, header: Header) -> io::Result<Value> {
+    match header {
+        Header::Positive(v) => Ok(if v <= i64::MAX as u64 {
+            Value::from(v as i64)
+        } else {
+            Value::Integer(ciborium::value::Integer::from(v))
+        }),
+        Header::Negative(v) => Ok(if v <= i64::MAX as u64 {
+            Value::from(-(v as i64) - 1)
+        } else {
+            // Synthesize a negative-bignum tag so downstream consumers can
+            // pattern-match Tag(3, Bytes) uniformly with values that arrived
+            // as actual BIGNEG tags from the wire.
+            let bytes = v.to_be_bytes();
+            let start = bytes.iter().position(|&b| b != 0).unwrap_or(7);
+            Value::Tag(3, Box::new(Value::Bytes(bytes[start..].to_vec())))
+        }),
+        Header::Float(f) => Ok(Value::Float(f)),
+        Header::Bytes(len) => Ok(Value::Bytes(read_segmented_bytes(decoder, len)?)),
+        Header::Text(len) => Ok(Value::Text(read_segmented_text(decoder, len)?)),
+        Header::Array(len) => Ok(Value::Array(read_array(decoder, len)?)),
+        Header::Map(len) => Ok(Value::Map(read_map(decoder, len)?)),
+        Header::Tag(tag) => {
+            let inner = pull_value(decoder)?;
+            Ok(Value::Tag(tag, Box::new(inner)))
         }
-        26 => {
-            let mut b = [0u8; 4];
-            r.read_exact(&mut b)?;
-            Ok(u32::from_be_bytes(b) as u64)
-        }
-        27 => {
-            let mut b = [0u8; 8];
-            r.read_exact(&mut b)?;
-            Ok(u64::from_be_bytes(b))
-        }
-        _ => Err(io::Error::new(
+        Header::Simple(simple) => Ok(match simple {
+            ciborium_ll::simple::FALSE => Value::Bool(false),
+            ciborium_ll::simple::TRUE => Value::Bool(true),
+            _ => Value::Null,
+        }),
+        Header::Break => Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("invalid CBOR additional info: {additional}"),
+            "unexpected CBOR break",
         )),
     }
 }
 
-fn read_raw_bytes(r: &mut impl Read, additional: u8) -> io::Result<Vec<u8>> {
-    if additional == 31 {
-        let mut buf = Vec::new();
-        loop {
-            let peek = read_u8(r)?;
-            if peek == 0xff {
-                break;
-            }
-            let len = read_argument(r, peek & 0x1f)? as usize;
-            let mut chunk = vec![0u8; len];
-            r.read_exact(&mut chunk)?;
-            buf.extend_from_slice(&chunk);
-        }
-        Ok(buf)
-    } else {
-        let len = read_argument(r, additional)? as usize;
-        let mut buf = vec![0u8; len];
-        r.read_exact(&mut buf)?;
-        Ok(buf)
+fn read_array<R: Read>(decoder: &mut Decoder<R>, len: Option<usize>) -> io::Result<Vec<Value>> {
+    if let Some(n) = len {
+        return (0..n).map(|_| pull_value(decoder)).collect();
     }
-}
-
-fn read_indefinite<R: Read, T>(
-    r: &mut R,
-    mut item: impl FnMut(&mut R, u8) -> io::Result<T>,
-) -> io::Result<Vec<T>> {
-    let mut out = Vec::new();
+    let mut items = Vec::new();
     loop {
-        let peek = read_u8(r)?;
-        if peek == 0xff {
-            return Ok(out);
+        let header = decoder.pull().map_err(map_decoder_err)?;
+        if matches!(header, Header::Break) {
+            return Ok(items);
         }
-        out.push(item(r, peek)?);
+        items.push(decode_header(decoder, header)?);
     }
 }
 
-/// Decode a single CBOR value given its already-read initial byte.
-fn decode(r: &mut impl Read, initial: u8) -> io::Result<Value> {
-    let major = initial >> 5;
-    let additional = initial & 0x1f;
+fn read_map<R: Read>(
+    decoder: &mut Decoder<R>,
+    len: Option<usize>,
+) -> io::Result<Vec<(Value, Value)>> {
+    if let Some(n) = len {
+        let mut entries = Vec::with_capacity(n);
+        for _ in 0..n {
+            entries.push((pull_value(decoder)?, pull_value(decoder)?));
+        }
+        return Ok(entries);
+    }
+    let mut entries = Vec::new();
+    loop {
+        let header = decoder.pull().map_err(map_decoder_err)?;
+        if matches!(header, Header::Break) {
+            return Ok(entries);
+        }
+        let key = decode_header(decoder, header)?;
+        let val = pull_value(decoder)?;
+        entries.push((key, val));
+    }
+}
 
-    match major {
-        0 => {
-            let v = read_argument(r, additional)?;
-            Ok(if v <= i64::MAX as u64 {
-                Value::from(v as i64)
-            } else {
-                Value::Integer(ciborium::value::Integer::from(v))
-            })
+fn read_segmented_bytes<R: Read>(
+    decoder: &mut Decoder<R>,
+    len: Option<usize>,
+) -> io::Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    let mut segments = decoder.bytes(len);
+    while let Some(mut segment) = segments.pull().map_err(map_decoder_err)? {
+        while let Some(part) = segment.pull(&mut chunk).map_err(map_decoder_err)? {
+            buf.extend_from_slice(part);
         }
-        1 => {
-            let v = read_argument(r, additional)?;
-            Ok(if v <= i64::MAX as u64 {
-                Value::from(-(v as i64) - 1)
-            } else {
-                let bytes = v.to_be_bytes();
-                let start = bytes.iter().position(|&b| b != 0).unwrap_or(7);
-                Value::Tag(3, Box::new(Value::Bytes(bytes[start..].to_vec())))
-            })
+    }
+    Ok(buf)
+}
+
+fn read_segmented_text<R: Read>(
+    decoder: &mut Decoder<R>,
+    len: Option<usize>,
+) -> io::Result<String> {
+    let mut buf = String::new();
+    let mut chunk = [0u8; 4096];
+    let mut segments = decoder.text(len);
+    while let Some(mut segment) = segments.pull().map_err(map_decoder_err)? {
+        while let Some(part) = segment.pull(&mut chunk).map_err(map_decoder_err)? {
+            buf.push_str(part);
         }
-        2 => Ok(Value::Bytes(read_raw_bytes(r, additional)?)),
-        3 => {
-            let bytes = read_raw_bytes(r, additional)?;
-            let s = String::from_utf8(bytes)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-            Ok(Value::Text(s))
-        }
-        4 => {
-            if additional == 31 {
-                Ok(Value::Array(read_indefinite(r, decode)?))
-            } else {
-                let n = read_argument(r, additional)? as usize;
-                (0..n)
-                    .map(|_| read_value(r))
-                    .collect::<io::Result<Vec<_>>>()
-                    .map(Value::Array)
-            }
-        }
-        5 => {
-            if additional == 31 {
-                let items = read_indefinite(r, |r, peek| Ok((decode(r, peek)?, read_value(r)?)))?;
-                Ok(Value::Map(items))
-            } else {
-                let n = read_argument(r, additional)? as usize;
-                let mut entries = Vec::with_capacity(n);
-                for _ in 0..n {
-                    entries.push((read_value(r)?, read_value(r)?));
-                }
-                Ok(Value::Map(entries))
-            }
-        }
-        6 => {
-            let tag = read_argument(r, additional)?;
-            let inner = read_value(r)?;
-            Ok(Value::Tag(tag, Box::new(inner)))
-        }
-        7 => match additional {
-            20 => Ok(Value::Bool(false)),
-            21 => Ok(Value::Bool(true)),
-            22 | 23 => Ok(Value::Null), // null and undefined map to same
-            24 => Ok(match read_u8(r)? {
-                20 => Value::Bool(false),
-                21 => Value::Bool(true),
-                _ => Value::Null,
-            }),
-            25 => {
-                let mut b = [0u8; 2];
-                r.read_exact(&mut b)?;
-                Ok(Value::Float(f64::from(half::f16::from_be_bytes(b))))
-            }
-            26 => {
-                let mut b = [0u8; 4];
-                r.read_exact(&mut b)?;
-                Ok(Value::Float(f32::from_be_bytes(b) as f64))
-            }
-            27 => {
-                let mut b = [0u8; 8];
-                r.read_exact(&mut b)?;
-                Ok(Value::Float(f64::from_be_bytes(b)))
-            }
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("unsupported simple value: additional={additional}"),
-            )),
-        },
-        _ => unreachable!("CBOR major type > 7"),
+    }
+    Ok(buf)
+}
+
+fn map_decoder_err<E: std::fmt::Debug>(e: ciborium_ll::Error<E>) -> io::Error {
+    match e {
+        ciborium_ll::Error::Io(io_err) => io::Error::other(format!("{io_err:?}")),
+        ciborium_ll::Error::Syntax(offset) => io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("CBOR syntax error at offset {offset}"),
+        ),
     }
 }
 

@@ -151,7 +151,7 @@ fn test_invalid_additional_info() {
     let data = [0x1c_u8];
     let err = read_value(&mut &data[..]).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    assert!(err.to_string().contains("invalid CBOR additional info"));
+    assert!(err.to_string().contains("CBOR syntax error"));
 }
 
 #[test]
@@ -245,12 +245,27 @@ fn test_two_byte_simple_other_is_null() {
 
 #[test]
 fn test_float32() {
-    // Major 7, additional 26 = 0xfa, then 4-byte f32
+    // Major 7, additional 26 = 0xfa, then 4-byte f32. ciborium-ll widens to f64.
     let f: f32 = 1.5;
     let bytes = f.to_be_bytes();
     let data = [0xfa, bytes[0], bytes[1], bytes[2], bytes[3]];
-    let v = read_value(&mut &data[..]).unwrap();
-    assert_eq!(v, Value::Float(1.5));
+    assert_eq!(read_value(&mut &data[..]).unwrap(), Value::Float(1.5));
+}
+
+#[test]
+fn test_float16_nan_and_infinity() {
+    // Major 7, additional 25 = 0xf9, then 2-byte f16. cbor2 unconditionally
+    // emits NaN/±inf in this shortest form, so we must accept it.
+    let nan = read_value(&mut &[0xf9, 0x7e, 0x00][..]).unwrap();
+    assert!(matches!(nan, Value::Float(f) if f.is_nan()));
+    assert_eq!(
+        read_value(&mut &[0xf9, 0x7c, 0x00][..]).unwrap(),
+        Value::Float(f64::INFINITY),
+    );
+    assert_eq!(
+        read_value(&mut &[0xf9, 0xfc, 0x00][..]).unwrap(),
+        Value::Float(f64::NEG_INFINITY),
+    );
 }
 
 #[test]
@@ -259,7 +274,7 @@ fn test_unsupported_simple_value() {
     let data = [0xfc_u8];
     let err = read_value(&mut &data[..]).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    assert!(err.to_string().contains("unsupported simple value"));
+    assert!(err.to_string().contains("CBOR syntax error"));
 }
 
 #[test]
