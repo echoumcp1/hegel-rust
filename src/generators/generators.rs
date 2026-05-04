@@ -292,7 +292,7 @@ where
         if valid.is_empty() {
             return None;
         }
-        use crate::cbor_utils::cbor_map;
+        use crate::utils::cbor_utils::cbor_map;
         let schema = cbor_map! {
             "type" => "integer",
             "min_value" => 0u64,

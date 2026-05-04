@@ -121,17 +121,12 @@ fn pull_value<R: Read>(decoder: &mut Decoder<R>) -> io::Result<Value> {
 
 fn decode_header<R: Read>(decoder: &mut Decoder<R>, header: Header) -> io::Result<Value> {
     match header {
-        Header::Positive(v) => Ok(if v <= i64::MAX as u64 {
-            Value::from(v as i64)
-        } else {
-            Value::Integer(ciborium::value::Integer::from(v))
-        }),
+        Header::Positive(v) => Ok(Value::Integer(ciborium::value::Integer::from(v))),
         Header::Negative(v) => Ok(if v <= i64::MAX as u64 {
             Value::from(-(v as i64) - 1)
         } else {
-            // Synthesize a negative-bignum tag so downstream consumers can
-            // pattern-match Tag(3, Bytes) uniformly with values that arrived
-            // as actual BIGNEG tags from the wire.
+            // cbor2 doesn't tag negative ints with BIGNEG (tag 3) unless it's less than -2^64
+            // this else branch is required to prevent a crash from negating with overflow
             let bytes = v.to_be_bytes();
             let start = bytes.iter().position(|&b| b != 0).unwrap_or(7);
             Value::Tag(3, Box::new(Value::Bytes(bytes[start..].to_vec())))
@@ -143,12 +138,14 @@ fn decode_header<R: Read>(decoder: &mut Decoder<R>, header: Header) -> io::Resul
         Header::Map(len) => Ok(Value::Map(read_map(decoder, len)?)),
         Header::Tag(tag) => {
             let inner = pull_value(decoder)?;
-            Ok(Value::Tag(tag, Box::new(inner)))
+            Ok(Value::Tag(tag, Box::new(inner))) // bigint are parsed here
         }
         Header::Simple(simple) => Ok(match simple {
             ciborium_ll::simple::FALSE => Value::Bool(false),
             ciborium_ll::simple::TRUE => Value::Bool(true),
-            _ => Value::Null,
+            ciborium_ll::simple::NULL => Value::Null,
+            ciborium_ll::simple::UNDEFINED => Value::Null,
+            _ => panic!("unexpected simple value: {simple:?}"),
         }),
         Header::Break => Err(io::Error::new(
             io::ErrorKind::InvalidData,

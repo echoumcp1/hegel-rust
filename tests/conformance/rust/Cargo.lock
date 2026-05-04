@@ -149,6 +149,7 @@ name = "hegeltest"
 version = "0.8.11"
 dependencies = [
  "ciborium",
+ "ciborium-ll",
  "crc32fast",
  "hegeltest-macros",
  "parking_lot",

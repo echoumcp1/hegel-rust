@@ -236,11 +236,11 @@ fn test_two_byte_simple_true() {
 }
 
 #[test]
+#[should_panic(expected = "unexpected simple value: 255")]
 fn test_two_byte_simple_other_is_null() {
     // Major 7, additional 24 = 0xf8, then value 255 (unassigned simple)
     let data = [0xf8, 255];
-    let v = read_value(&mut &data[..]).unwrap();
-    assert_eq!(v, Value::Null);
+    read_value(&mut &data[..]).unwrap();
 }
 
 #[test]
