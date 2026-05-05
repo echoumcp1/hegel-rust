@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.12 - 2026-05-05
+
+Bump our pinned hegel-core to [0.7.0](https://github.com/hegeldev/hegel-core/releases/tag/v0.7.0), incorporating the following change:
+
+> This release adds support for the `phases` parameter in the `run_test` protocol message,
+> allowing clients to control which Hypothesis phases run (e.g. `generate`, `shrink`,
+> `reuse`, `target`, `explicit`, `explain`).
+>
+> — [v0.7.0](https://github.com/hegeldev/hegel-core/releases/tag/v0.7.0)
+
 ## 0.8.11 - 2026-05-01
 
 `sampled_from([...]).filter(pred)` now works correctly regardless of how selective the predicate is. Previously, very selective filters (e.g. only one value in 100 satisfies the predicate) would trigger a `FilterTooMuch` health check. Now the filter enumerates the valid subset of elements and picks directly from it. If no element satisfies the predicate, the test panics immediately with a clear "Unsatisfiable filter" message instead of failing via a health check.
