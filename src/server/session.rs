@@ -345,9 +345,6 @@ impl TestRunner for ServerTestRunner {
             eprintln!("run_test response received");
         }
 
-        let shrink_enabled = settings.phases.contains(&Phase::Shrink);
-        let mut found_interesting = false;
-
         let result_data: Value;
         let ack_null = cbor_map! {"result" => Value::Null};
         loop {
@@ -382,14 +379,7 @@ impl TestRunner for ServerTestRunner {
                         test_case_stream,
                         verbosity,
                     ));
-                    if !shrink_enabled && found_interesting {
-                        backend.mark_complete("VALID", None);
-                    } else {
-                        let result = run_case(backend, false);
-                        if matches!(result, TestCaseResult::Interesting { .. }) {
-                            found_interesting = true;
-                        }
-                    }
+                    run_case(backend, false);
                 }
                 "test_done" => {
                     let ack_true = cbor_map! {"result" => true};
