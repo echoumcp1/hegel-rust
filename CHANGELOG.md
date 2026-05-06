@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.10.0 - 2026-05-06
+
+This patch fixes `gs::vecs(gs::sampled_from(...)).unique(true)` sometimes producing duplicate elements.
+
+Rename `Variables::empty()` to `Variables::is_empty()` to follow Rust naming conventions, and add `Variables::len() -> usize`. The old `empty()` method is removed; callers should use `is_empty()` instead.
+
+## 0.9.1 - 2026-05-06
+
+This patch fixes `gs::vecs(gs::sampled_from(...)).unique(true)` sometimes producing duplicate elements.
+
+## 0.9.0 - 2026-05-06
+
+This release adds the `Phase` enum and `Settings::phases()` API, allowing
+callers to control which test lifecycle phases run. The default phase set
+is `Explicit`, `Reuse`, `Generate`, `Target`, and `Shrink`.
+
 ## 0.8.13 - 2026-05-05
 
 This patch fixes two related issues with negative zero in the float generator:

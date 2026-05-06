@@ -1,5 +1,5 @@
 use crate::backend::{DataSource, TestCaseResult, TestRunResult, TestRunner};
-use crate::runner::{Database, HealthCheck, Mode, Settings, Verbosity};
+use crate::runner::{Database, HealthCheck, Mode, Phase, Settings, Verbosity};
 use crate::server::protocol::{Connection, HANDSHAKE_STRING, Stream};
 use crate::utils::cbor_utils::{as_bool, as_text, as_u64, cbor_map, map_get, map_insert};
 use ciborium::Value;
@@ -16,7 +16,7 @@ use super::process::{
 use super::runner::{cbor_decode, cbor_encode};
 
 pub(super) const SUPPORTED_PROTOCOL_VERSIONS: (&str, &str) = ("0.12", "0.13");
-pub(super) const HEGEL_SERVER_VERSION: &str = "0.7.0";
+pub(super) const HEGEL_SERVER_VERSION: &str = "0.6.1";
 
 pub(super) static SESSION: Mutex<Option<Arc<HegelSession>>> = Mutex::new(None);
 
@@ -26,6 +26,16 @@ fn health_check_as_str(check: &HealthCheck) -> &'static str {
         HealthCheck::TooSlow => "too_slow",
         HealthCheck::TestCasesTooLarge => "test_cases_too_large",
         HealthCheck::LargeInitialTestCase => "large_initial_test_case",
+    }
+}
+
+fn phase_as_str(phase: &Phase) -> &'static str {
+    match phase {
+        Phase::Explicit => "explicit",
+        Phase::Reuse => "reuse",
+        Phase::Generate => "generate",
+        Phase::Target => "target",
+        Phase::Shrink => "shrink",
     }
 }
 
@@ -308,6 +318,14 @@ impl TestRunner for ServerTestRunner {
                     Value::Array(suppress_names),
                 ));
             }
+        }
+        let phase_names: Vec<Value> = settings
+            .phases
+            .iter()
+            .map(|p| Value::Text(phase_as_str(p).to_string()))
+            .collect();
+        if let Value::Map(ref mut map) = run_test_msg {
+            map.push((Value::Text("phases".to_string()), Value::Array(phase_names)));
         }
 
         // The control stream is behind a Mutex because Stream requires &mut self.
